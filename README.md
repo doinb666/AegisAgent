@@ -6,7 +6,43 @@
 
 面向企业场景的 AI Agent 后端框架：强调 **可靠性、可扩展性、可观测性、低延迟**。
 
+[![GitHub Repo](https://img.shields.io/badge/GitHub-doinb666%2FAegisAgent-181717?logo=github)](https://github.com/doinb666/AegisAgent)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+
 </div>
+
+---
+
+## 架构图
+
+```mermaid
+flowchart TD
+    U[Client / Frontend] --> API[FastAPI API Layer]
+    API --> ORCH[Agent Orchestrator]
+
+    ORCH --> REACT[ReAct Executor]
+    ORCH --> PLAN[Plan-and-Execute]
+    ORCH --> REFLECT[Reflection]
+
+    ORCH --> TOOL[Tool Router]
+    ORCH --> MEM[Memory Manager]
+    ORCH --> RAG[RAG Pipeline]
+
+    MEM --> STM[(Redis Short-term)]
+    MEM --> LTM[(Milvus Long-term)]
+
+    RAG --> VEC[Vector Retriever]
+    RAG --> BM25[BM25 Retriever]
+    RAG --> RRF[RRF Fusion]
+    RAG --> RERANK[Cross-Encoder Reranker]
+
+    ORCH --> LLMR[Model Router]
+    LLMR --> CB[Circuit Breaker]
+    CB --> LLM[(LLM Providers)]
+
+    API --> TRACE[Trace / Logs]
+    API --> PG[(PostgreSQL)]
+```
 
 ---
 
@@ -138,6 +174,14 @@ curl http://127.0.0.1:8000/api/v1/health
 ```bash
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
+
+---
+
+## Demo
+
+> 建议录制 30-60 秒 GIF（health + chat 流程），放置在 `docs/assets/demo.gif`。
+
+![AegisAgent Demo](docs/assets/demo.gif)
 
 ---
 
