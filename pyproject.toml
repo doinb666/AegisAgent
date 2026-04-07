@@ -1,0 +1,63 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "enterprise-ai-agent"
+version = "0.1.0"
+description = "企业级 AI Agent 服务（FastAPI + LangChain/LangGraph + RAG）"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "Your Team" }]
+keywords = ["ai", "agent", "rag", "fastapi", "langchain"]
+dependencies = [
+    "fastapi>=0.115.0",
+    "uvicorn>=0.34.0",
+    "langchain>=0.3.0",
+    "langchain-openai>=0.3.0",
+    "langchain-community>=0.3.0",
+    "langgraph>=0.3.0",
+    "pymilvus>=2.5.0",
+    "redis>=5.2.0",
+    "sqlalchemy>=2.0.0",
+    "psycopg2-binary>=2.9.0",
+    "asyncpg>=0.30.0",
+    "pydantic>=2.10.0",
+    "pydantic-settings>=2.7.0",
+    "python-multipart>=0.0.18",
+    "tiktoken>=0.8.0",
+    "sentence-transformers>=3.3.0",
+    "httpx>=0.28.0",
+    "loguru>=0.7.0",
+    "tenacity>=9.0.0",
+    "python-dotenv>=1.0.0",
+    "unstructured>=0.16.0",
+    "pypdf>=5.0.0",
+    "openai>=1.60.0",
+    "numpy>=2.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.24.0",
+    "ruff>=0.8.0",
+    "mypy>=1.13.0",
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["app*"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = false
+ignore_missing_imports = true
