@@ -177,14 +177,6 @@ uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 
 ---
 
-## Demo
-
-> 建议录制 30-60 秒 GIF（health + chat 流程），放置在 `docs/assets/demo.gif`。
-
-![AegisAgent Demo](docs/assets/demo.gif)
-
----
-
 ## API 示例
 
 ### Health
