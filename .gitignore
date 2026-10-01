@@ -1,1 +1,13 @@
+.venv/
 .worktrees/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+.env
+data/
+uploads/
+build/
+dist/
+*.spec
+*.egg-info/

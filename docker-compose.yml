@@ -1,106 +1,40 @@
 services:
   app:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    container_name: enterprise-ai-agent-app
-    ports:
-      - "8000:8000"
+    build: .
+    ports: ["127.0.0.1:8000:8000"]
+    env_file:
+      - path: .env
+        required: false
     environment:
-      DATABASE_URL: postgresql+psycopg2://postgres:postgres@postgres:5432/agent_db
-      REDIS_URL: redis://redis:6379/0
-      MILVUS_HOST: milvus
-      MILVUS_PORT: "19530"
-      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      DEBUG: "false"
+      AEGIS_DATA_DIR: /app/data
+      AEGIS_DATABASE_URL: postgresql+asyncpg://aegis:${POSTGRES_PASSWORD:?请在环境中设置POSTGRES_PASSWORD}@postgres:5432/aegis
+    volumes: ["aegis_data:/app/data"]
     depends_on:
       postgres:
         condition: service_healthy
-      redis:
-        condition: service_started
-      milvus:
-        condition: service_started
     restart: unless-stopped
-
+    init: true
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: [ALL]
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/v1/health/ready', timeout=3)"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
   postgres:
     image: postgres:16-alpine
-    container_name: enterprise-ai-agent-postgres
     environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: agent_db
-    ports:
-      - "5432:5432"
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
+      POSTGRES_USER: aegis
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?请设置POSTGRES_PASSWORD}
+      POSTGRES_DB: aegis
+    volumes: ["postgres_data:/var/lib/postgresql/data"]
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d agent_db"]
+      test: [CMD-SHELL, "pg_isready -U aegis -d aegis"]
       interval: 5s
       timeout: 5s
-      retries: 5
+      retries: 10
     restart: unless-stopped
-
-  redis:
-    image: redis:7-alpine
-    container_name: enterprise-ai-agent-redis
-    ports:
-      - "6379:6379"
-    volumes:
-      - redis_data:/data
-    command: redis-server --appendonly yes
-    restart: unless-stopped
-
-  etcd:
-    image: quay.io/coreos/etcd:v3.5.5
-    container_name: enterprise-ai-agent-etcd
-    environment:
-      ETCD_AUTO_COMPACTION_MODE: revision
-      ETCD_AUTO_COMPACTION_RETENTION: "1000"
-      ETCD_QUOTA_BACKEND_BYTES: "4294967296"
-      ETCD_SNAPSHOT_COUNT: "50000"
-    command: >
-      etcd -advertise-client-urls=http://127.0.0.1:2379
-      -listen-client-urls http://0.0.0.0:2379
-      --data-dir /etcd
-    volumes:
-      - etcd_data:/etcd
-    restart: unless-stopped
-
-  minio:
-    image: minio/minio:latest
-    container_name: enterprise-ai-agent-minio
-    environment:
-      MINIO_ACCESS_KEY: minioadmin
-      MINIO_SECRET_KEY: minioadmin
-    command: minio server /minio_data --console-address ":9001"
-    ports:
-      - "9000:9000"
-      - "9001:9001"
-    volumes:
-      - minio_data:/minio_data
-    restart: unless-stopped
-
-  milvus:
-    image: milvusdb/milvus:v2.4.15
-    container_name: enterprise-ai-agent-milvus
-    command: ["milvus", "run", "standalone"]
-    environment:
-      ETCD_ENDPOINTS: etcd:2379
-      MINIO_ADDRESS: minio:9000
-    ports:
-      - "19530:19530"
-      - "9091:9091"
-    volumes:
-      - milvus_data:/var/lib/milvus
-    depends_on:
-      etcd:
-        condition: service_started
-      minio:
-        condition: service_started
-    restart: unless-stopped
-
 volumes:
+  aegis_data:
   postgres_data:
-  redis_data:
-  etcd_data:
-  minio_data:
-  milvus_data:

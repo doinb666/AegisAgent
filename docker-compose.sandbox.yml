@@ -1,0 +1,23 @@
+# 与主 Compose 合并；宿主数据目录需允许 UID 10001 写入。
+# 执行器访问 Docker socket，不发布端口；API 无 socket 挂载。
+services:
+  app:
+    environment:
+      AEGIS_SANDBOX_URL: http://sandbox:8001
+      AEGIS_SANDBOX_TOKEN: ${AEGIS_SANDBOX_TOKEN:?请设置独立执行凭据}
+    volumes:
+      - ${AEGIS_HOST_DATA_DIR:?请设置宿主数据目录绝对路径}:/app/data
+  sandbox:
+    build: .
+    user: "0:0"
+    command: [python, -m, uvicorn, "app.sandbox_service:app", --host, "0.0.0.0", --port, "8001"]
+    environment:
+      AEGIS_SANDBOX_TOKEN: ${AEGIS_SANDBOX_TOKEN:?请设置独立执行凭据}
+      AEGIS_SANDBOX_HOST_ROOT: ${AEGIS_HOST_DATA_DIR:?请设置宿主数据目录绝对路径}/workspaces
+      AEGIS_SANDBOX_VISIBLE_ROOT: /workspaces
+      AEGIS_SANDBOX_TIMEOUT_SECONDS: "30"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ${AEGIS_HOST_DATA_DIR:?请设置宿主数据目录绝对路径}/workspaces:/workspaces:ro
+    restart: unless-stopped
+    init: true

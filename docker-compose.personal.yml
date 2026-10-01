@@ -1,0 +1,18 @@
+services:
+  app:
+    build: .
+    ports: ["127.0.0.1:8000:8000"]
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      DEBUG: "false"
+      AEGIS_DATA_DIR: /app/data
+      AEGIS_DATABASE_URL: ""
+    volumes: ["aegis_data:/app/data"]
+    init: true
+    restart: unless-stopped
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: [ALL]
+volumes:
+  aegis_data:

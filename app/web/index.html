@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AegisCode · 你的任务工作台</title>
+  <link rel="stylesheet" href="/static/styles.css">
+  <script src="/static/app.js" defer></script>
+</head>
+<body>
+  <div id="auth" class="auth-screen">
+    <div class="auth-intro"><span class="wordmark">AegisCode<span class="brand-dot"></span></span>
+      <h1>任务有进度，<br>经验有归处。</h1><p>问答、代码与知识工作，在一个可审查的空间持续推进。</p>
+      <div class="intro-note">你的记忆和能力仅属于你的账号。每一次操作都可以追溯。</div></div>
+    <form id="auth-form" class="auth-form"><span class="eyebrow">进入工作空间</span><h2>欢迎回来</h2>
+      <label for="username">账号</label><input id="username" autocomplete="username" required maxlength="128">
+      <label for="password">密码</label><input id="password" type="password" autocomplete="current-password" required minlength="8" maxlength="1024">
+      <p id="auth-error" class="error" role="alert"></p><button id="login" type="submit" class="primary">登录工作台</button>
+      <button id="register" type="button" class="secondary">创建个人工作空间</button>
+      <p class="muted">企业成员请使用管理员创建的账号。个人注册会创建独立空间。</p>
+    </form>
+  </div>
+  <div id="shell" class="shell" hidden>
+    <aside class="sidebar">
+      <a class="wordmark" href="/">AegisCode<span class="brand-dot"></span></a>
+      <button id="new-task" class="new-task">＋ 新任务 <kbd>Alt N</kbd></button>
+      <nav aria-label="工作台导航">
+        <button data-view="chat" class="nav-button selected">任务空间<span>01</span></button>
+        <button data-view="projects" class="nav-button">项目<span>02</span></button>
+        <button data-view="memories" class="nav-button">长期记忆<span>03</span></button>
+        <button data-view="skills" class="nav-button">Skills<span>04</span></button>
+        <button data-view="documents" class="nav-button">知识库<span>05</span></button>
+        <button data-view="settings" class="nav-button">能力与设置<span>06</span></button>
+      </nav>
+      <div class="section-caption">最近的任务 <button id="refresh" aria-label="刷新任务">↻</button></div>
+      <div id="run-list" class="run-list"></div>
+      <div class="sidebar-footer"><div id="account" class="account"></div><button id="logout">退出登录</button></div>
+    </aside>
+    <main class="main">
+      <header class="topbar"><div><span class="eyebrow">工作空间 / <span id="location">任务</span></span><h2 id="view-title">任务空间</h2><div id="memory-preview" class="memory-preview"></div></div>
+        <span id="connection" class="status-tag">已连接</span></header>
+      <section id="chat-view" class="view chat-view">
+        <div id="conversation" class="conversation" aria-live="polite">
+          <div id="welcome" class="welcome"><span class="eyebrow">从一个清楚的目标开始</span><h1>今天，推进什么？</h1>
+            <p>描述任务、补充约束，或先上传资料。需要写文件和执行代码时，我会请求你的审批。</p>
+            <div class="suggestions"><button data-prompt="根据我的知识库回答问题，并列出来源和不足。">从资料中找答案 <span>↗</span></button>
+              <button data-prompt="帮我审查代码。先列出所需文件与检查计划，再执行只读分析。">审查代码与边界 <span>↗</span></button>
+              <button data-prompt="我希望你记住：回答使用中文，先给结论，未经确认不要修改文件。">建立我的协作偏好 <span>↗</span></button></div>
+          </div>
+        </div>
+        <form id="composer" class="composer"><label for="message" class="sr-only">描述你的任务</label>
+          <textarea id="message" placeholder="描述任务，或添加需要遵守的约束…" rows="3" maxlength="16000" required></textarea>
+          <div class="composer-bottom"><div><label for="mode" class="sr-only">执行方式</label><select id="mode"><option value="react">直接执行</option><option value="plan">先规划</option><option value="reflection">审查回答</option></select>
+            <label for="model" class="sr-only">模型</label><select id="model"><option value="">自动选择模型</option></select></div>
+            <button id="send" class="primary" type="submit">开始任务 <span>↗</span></button></div>
+          <p class="composer-hint">Enter 换行 · Ctrl Enter 发送 · 外部工具内容仅作为证据</p>
+        </form>
+      </section>
+      <section id="assets-view" class="view assets-view" hidden>
+        <div class="view-heading"><p id="assets-description"></p><button id="add-asset" class="primary">添加</button></div>
+        <form id="asset-form" class="asset-editor" hidden>
+          <label for="asset-name">名称</label><input id="asset-name" required maxlength="200">
+          <label for="asset-kind">类型</label><select id="asset-kind"><option value="profile">画像</option><option value="preference">偏好</option><option value="constraint">约束与边界</option><option value="memory">长期记忆</option><option value="episodic">情景经验</option><option value="skill">Skill</option><option value="procedure">程序性经验</option><option value="project">项目</option></select>
+          <label for="asset-content">内容、触发条件与验证步骤</label><textarea id="asset-content" required maxlength="16000" rows="6"></textarea>
+          <button type="submit" class="primary">保存候选</button><button id="close-editor" type="button">取消</button>
+        </form>
+        <form id="upload-form" class="upload-area" hidden><label for="document-file">上传 TXT、Markdown 或 PDF</label><input id="document-file" type="file" accept=".txt,.md,.pdf" required><button class="primary">上传资料</button></form>
+        <div id="asset-list" class="asset-list"></div>
+      </section>
+      <section id="settings-view" class="view settings-view" hidden><h3>当前能力</h3><p>模型与隔离服务由服务端配置，页面不会显示任何密钥。</p><pre id="capabilities"></pre>
+        <details><summary>企业成员管理</summary><form id="member-form"><label for="member-name">成员账号</label><input id="member-name" required><label for="member-password">初始密码</label><input id="member-password" type="password" minlength="8" required><label for="member-role">角色</label><select id="member-role"><option value="operator">操作员</option><option value="viewer">只读成员</option></select><button class="primary">创建成员</button></form></details></section>
+      <p id="notice" class="notice" role="status" aria-live="polite"></p>
+    </main>
+    <aside class="inspector"><div class="inspector-heading"><span class="eyebrow">任务审查</span><h3>运行与证据</h3></div>
+      <div id="run-status" class="run-status">尚未开始任务</div><div id="run-meta" class="run-meta"></div>
+      <div id="approval" class="approval" hidden><h4>需要你的批准</h4><p>请核对工具及完整参数。批准仅对本次操作有效。</p><pre id="approval-data"></pre><button id="approve" class="primary">批准这次操作</button><button id="reject" class="danger">拒绝</button></div>
+      <button id="cancel" class="secondary" hidden>停止任务</button>
+      <div id="feedback" class="feedback" hidden><h4>任务是否达到目标？</h4><button id="success">已解决</button><button id="failure">仍有问题</button><p class="muted">反馈用于验证经验，候选能力可在 Skills 中管理。</p></div>
+      <div class="section-caption">执行记录</div><ol id="timeline" class="timeline"></ol>
+    </aside>
+  </div>
+</body>
+</html>
