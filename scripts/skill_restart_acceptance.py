@@ -2,9 +2,23 @@
 
 import argparse
 import json
+import time
 from urllib.parse import urlparse
 
 import httpx
+
+
+def wait_ready(client):
+    """等待本机服务真正就绪，避免容器重启后过早发送登录请求。"""
+    deadline = time.monotonic() + 20
+    while time.monotonic() < deadline:
+        try:
+            if client.get("/health/ready", timeout=2).status_code == 200:
+                return
+        except httpx.RequestError:
+            pass
+        time.sleep(0.2)
+    raise AssertionError("验收服务在20秒内未就绪")
 
 
 def main():
@@ -16,10 +30,11 @@ def main():
     assert urlparse(args.url).hostname in {"127.0.0.1", "localhost"}, "只连接本机验收服务"
     credentials = {"username": args.account, "password": "skill-restart-test-2026"}
     with httpx.Client(base_url=args.url + "/api/v1", timeout=15) as client:
+        wait_ready(client)
         if args.prepare:
             assert client.post("/auth/register", json=credentials).status_code == 201
         login = client.post("/auth/login", json=credentials)
-        assert login.status_code == 200
+        assert login.status_code == 200, f"登录失败，状态码：{login.status_code}"
         client.headers["Authorization"] = "Bearer " + login.json()["token"]
         if args.prepare:
             imported = client.post(
