@@ -64,9 +64,14 @@ class DocumentParser:
 
         reader = PdfReader(io.BytesIO(data))
         parts: list[str] = []
+        remaining = self._max_chars
         for page in reader.pages:
+            if remaining <= 0:
+                break
             try:
-                parts.append(page.extract_text() or "")
+                text = (page.extract_text() or "")[:remaining]
+                parts.append(text)
+                remaining -= len(text) + 1
             except Exception as exc:
                 logger.warning("单页 PDF 抽取失败: {}", exc)
 

@@ -1,17 +1,15 @@
-# -*- coding: utf-8 -*-
 """健康检查：进程存活与依赖探测。"""
 
 from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Request
+from fastapi.responses import JSONResponse
 from loguru import logger
 from sqlalchemy import text
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
-from app.infrastructure.database.session import get_async_session
 
 router = APIRouter(tags=["health"])
 
@@ -24,19 +22,21 @@ async def health() -> dict[str, str]:
 
 @router.get("/health/ready")
 async def health_ready(
-    session: AsyncSession = Depends(get_async_session),
+    request: Request,
 ) -> dict[str, Any]:
     """就绪探针：检查数据库连通性。"""
     settings = get_settings()
     try:
-        await session.execute(text("SELECT 1"))
+        async with request.app.state.harness.store.sessions() as session:
+            await session.execute(text("SELECT 1"))
         db_ok = True
     except Exception as exc:
         logger.warning("数据库就绪检查失败: {}", exc)
         db_ok = False
 
-    return {
+    result = {
         "status": "ready" if db_ok else "degraded",
         "database": "up" if db_ok else "down",
         "app_env": settings.app_env,
     }
+    return JSONResponse(status_code=200 if db_ok else 503, content=result)

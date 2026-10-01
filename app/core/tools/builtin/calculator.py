@@ -1,16 +1,15 @@
-# -*- coding: utf-8 -*-
 """内置计算器工具：安全求值算术表达式。"""
 
 from __future__ import annotations
 
 import ast
+import math
 import operator as op
 from typing import Any
 
 from loguru import logger
 
 from app.core.tools.base import BaseTool, ToolParameter
-
 
 _ALLOWED_OPS = {
     ast.Add: op.add,
@@ -46,6 +45,8 @@ class CalculatorTool(BaseTool):
         if isinstance(node, ast.BinOp) and type(node.op) in _ALLOWED_OPS:
             left = self._eval(node.left)
             right = self._eval(node.right)
+            if isinstance(node.op, ast.Pow) and abs(right) > 100:
+                raise ValueError("指数超过计算预算")
             return float(_ALLOWED_OPS[type(node.op)](left, right))
         if isinstance(node, ast.UnaryOp) and type(node.op) in _ALLOWED_OPS:
             return float(_ALLOWED_OPS[type(node.op)](self._eval(node.operand)))
@@ -58,10 +59,16 @@ class CalculatorTool(BaseTool):
         expr = str(kwargs.get("expression", "")).strip()
         if not expr:
             raise ValueError("参数 expression 不能为空")
+        if len(expr) > 512:
+            raise ValueError("表达式超过长度预算")
 
         try:
             tree = ast.parse(expr, mode="eval")
+            if len(list(ast.walk(tree))) > 100:
+                raise ValueError("表达式超过节点预算")
             result = self._eval(tree.body)
+            if not math.isfinite(result):
+                raise ValueError("计算结果超出有限数值范围")
             logger.info("calculator 计算 {} = {}", expr, result)
             return str(result)
         except Exception as exc:
