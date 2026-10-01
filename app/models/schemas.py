@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """API 请求与响应模型。"""
 
 from __future__ import annotations
@@ -6,8 +5,6 @@ from __future__ import annotations
 from typing import Any
 
 from pydantic import BaseModel, Field
-
-from app.models.enums import MessageRole
 
 
 class ChatMessage(BaseModel):
@@ -57,37 +54,6 @@ class DocumentInfo(BaseModel):
     created_at: str | None = None
 
 
-class DocumentUploadRequest(BaseModel):
-    """文档上传附加元数据（可选）。"""
-
-    tags: list[str] = Field(default_factory=list)
-
-
-class Message(BaseModel):
-    """对话消息（记忆/RAG 内部使用，含角色枚举）。"""
-
-    role: MessageRole
-    content: str
-    metadata: dict[str, Any] = Field(default_factory=dict)
-
-
-class MemoryItem(BaseModel):
-    """长期记忆召回条目。"""
-
-    id: str
-    content: str
-    score: float = 0.0
-    metadata: dict[str, Any] = Field(default_factory=dict)
-
-
-class MemoryContext(BaseModel):
-    """短期 + 长期记忆合并上下文。"""
-
-    session_id: str
-    short_term_messages: list[Message]
-    long_term_items: list[MemoryItem]
-
-
 class RetrievalResult(BaseModel):
     """检索单条结果。"""
 
@@ -96,20 +62,3 @@ class RetrievalResult(BaseModel):
     score: float = 0.0
     metadata: dict[str, Any] = Field(default_factory=dict)
     source: str = "vector"
-
-
-class Citation(BaseModel):
-    """答案中的引用标注。"""
-
-    index: int
-    result_id: str
-    snippet: str
-
-
-class RAGResponse(BaseModel):
-    """RAG 生成结果。"""
-
-    answer: str
-    citations: list[Citation] = Field(default_factory=list)
-    raw_contexts: list[RetrievalResult] = Field(default_factory=list)
-    model: str | None = None

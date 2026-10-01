@@ -111,7 +111,9 @@ Windows构建：
 
 主入口：Python 3.12、FastAPI、SQLAlchemy async、SQLite/PostgreSQL、OpenAI兼容工具调用、MCP SDK、Docker、静态HTML/CSS/JavaScript、PyInstaller。
 
-原LangChain/LangGraph、Redis、Milvus组件保留在 `app/core/` 与 `app/infrastructure/`；旧无鉴权 `/chat` 和文档路由不再挂载。原组件依赖在 `requirements.txt`，新版运行依赖在 `requirements-harness.txt`，重型检索按需安装 `pip install ".[rag]"`。
+旧Agent编排、Redis记忆/缓存、工具注册/路由与独立RAG生成链已移除；工作台执行与记忆由 `app/harness/` 承担。Milvus、Reranker、计算工具、模型路由/熔断及ETL仍有实际消费者。完整运行与可选演示依赖在 `requirements.txt`，基础工作台依赖在 `requirements-harness.txt`，重型检索按需安装 `pip install ".[rag]"`；`legacy` extra保留名称，仅安装Gradio演示依赖。
+
+旧无鉴权 `/chat` 和文档路由源码暂时保留，但不在主入口挂载；新增Gradio独立演示仍引用旧HTTP路径，其与当前后端的兼容性**未验证**。删除依据、保留边界与回归结果见 [全目录冗余清理记录](docs/升级方案/10-全目录冗余清理记录.md)。
 
 ```text
 app/harness/        身份、任务事实源、执行闭环、上下文与经验资产
@@ -119,6 +121,8 @@ app/harness_tools/  工作区、沙箱、MCP、仓库与知识检索
 app/api/           鉴权API、SSE与请求边界
 app/web/           AegisCode工作台
 app/etl/           有资源预算的独立文档解析进程
+app/core/          复用的意图识别、计算工具与可选重排
+app/infrastructure/ 模型路由、向量库及保留的旧追踪/数据库组件
 scripts/           安装、打包、浏览器与专项验收
 tests/             权限、恢复、工具、API及并发回归
 docs/              使用说明、设计决策与验收证据

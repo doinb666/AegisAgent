@@ -1,11 +1,9 @@
-# -*- coding: utf-8 -*-
 """文档解析器：按 MIME 类型选择解析策略。"""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import BinaryIO
 
 from loguru import logger
 

@@ -31,7 +31,6 @@ class Settings(BaseSettings):
         default="postgresql+asyncpg://postgres:postgres@localhost:5432/agent_db",
         description="SQLAlchemy 异步数据库 URL（推荐 postgresql+asyncpg）",
     )
-    redis_url: str = Field(default="redis://localhost:6379/0", description="Redis URL")
 
     milvus_host: str = Field(default="localhost", description="Milvus 主机")
     milvus_port: int = Field(default=19530, description="Milvus 端口")

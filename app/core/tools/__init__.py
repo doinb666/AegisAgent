@@ -1,8 +1,5 @@
-# -*- coding: utf-8 -*-
-"""工具系统：注册、路由与内置工具。"""
+"""仍由 Harness 使用的工具基础类型。"""
 
 from app.core.tools.base import BaseTool, ToolParameter
-from app.core.tools.registry import ToolRegistry
-from app.core.tools.router import ToolRouter
 
-__all__ = ["BaseTool", "ToolParameter", "ToolRegistry", "ToolRouter"]
+__all__ = ["BaseTool", "ToolParameter"]

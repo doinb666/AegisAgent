@@ -10,7 +10,7 @@ readme = "README.md"
 requires-python = ">=3.12"
 license = { text = "MIT" }
 authors = [{ name = "Your Team" }]
-keywords = ["ai", "agent", "rag", "fastapi", "langchain"]
+keywords = ["ai", "agent", "rag", "fastapi"]
 dependencies = [
     "fastapi>=0.115.0",
     "uvicorn>=0.34.0",
@@ -39,8 +39,7 @@ aegiscode = "app.launcher:main"
 
 [project.optional-dependencies]
 rag = ["pymilvus>=2.5,<3", "sentence-transformers>=3.3,<6", "numpy>=2,<3"]
-legacy = ["langchain>=0.3", "langchain-openai>=0.3", "langchain-community>=0.3",
-          "langgraph>=0.3", "redis>=5.2", "gradio>=4", "tiktoken>=0.8"]
+legacy = ["gradio>=4"]
 dev = [
     "pytest>=8.0.0",
     "pytest-asyncio>=0.24.0",
