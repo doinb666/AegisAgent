@@ -300,7 +300,12 @@ async def test_delegate_none_answer_and_read_only_child_contract(tmp_path):
     )
     assert result[0]["answer"] == ""
     arguments = tools.service.created_arguments[0]
-    assert arguments["allowed_tools"] == ["calculator", "knowledge_search", "artifact_read"]
+    assert arguments["allowed_tools"] == [
+        "calculator",
+        "knowledge_search",
+        "artifact_read",
+        "skill_read",
+    ]
     assert arguments["max_steps"] == 3 and arguments["session_id"] == "parent-session"
 
 

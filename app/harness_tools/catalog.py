@@ -34,6 +34,15 @@ SCHEMAS = [
     tool_schema("calculator", "计算有限算术表达式", {"expression": STRING}, ["expression"]),
     tool_schema("knowledge_search", "在本人知识库中检索，返回证据块", {"query": STRING}, ["query"]),
     tool_schema(
+        "skill_read",
+        "只读本人已激活 Skill 正文或文本资源，不执行资源脚本",
+        {
+            "asset_id": {"type": "string", "minLength": 1, "maxLength": 128},
+            "path": {"type": "string", "minLength": 1, "maxLength": 128},
+        },
+        ["asset_id"],
+    ),
+    tool_schema(
         "artifact_read",
         "按 ID 与范围读取本人的外置工具结果",
         {
@@ -141,6 +150,8 @@ class HarnessTools:
                 "total": len(asset["content"]),
                 "content": asset["content"][start : start + length],
             }
+        if name == "skill_read":
+            return await self.service.read_skill(principal, **arguments)
         if name == "file_read":
             return await self.workspace.read(principal, run_id, arguments["path"])
         if name == "file_write":
@@ -164,7 +175,7 @@ class HarnessTools:
         parent = await self.service.get_run(principal, run_id)
         if parent.get("parent_run_id"):
             raise PermissionError("子 Agent 不允许递归委派")
-        child_tools = ["calculator", "knowledge_search", "artifact_read"]
+        child_tools = ["calculator", "knowledge_search", "artifact_read", "skill_read"]
         children = []
 
         async def collect(child_id):

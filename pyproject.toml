@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "aegiscode"
-version = "0.2.0"
+version = "0.2.1"
 description = "AegisCode 持久化任务工作台与受控自进化 Agent"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -31,6 +31,7 @@ dependencies = [
     "httpx2>=2.13,<3",
     "jsonschema>=4.23,<5",
     "docker>=7,<8",
+    "PyYAML>=6,<7",
 ]
 
 [project.scripts]

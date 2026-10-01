@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 from typing import Literal
 
-from fastapi import APIRouter, Depends, File, Header, HTTPException, Request, UploadFile
+from fastapi import APIRouter, Depends, File, Header, HTTPException, Query, Request, UploadFile
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
@@ -62,6 +62,7 @@ class AssetInput(BaseModel):
     content: str = Field(min_length=1, max_length=16000)
     metadata: dict = Field(default_factory=dict)
     status: Literal["draft", "active", "retired"] = "draft"
+    expected_version: int | None = Field(default=None, ge=1, strict=True)
 
 
 class TransitionInput(BaseModel):
@@ -70,6 +71,16 @@ class TransitionInput(BaseModel):
 
 class RestoreInput(BaseModel):
     version: int = Field(ge=1)
+
+
+class SkillImportInput(BaseModel):
+    model_config = {"extra": "forbid"}
+
+    document: str = Field(min_length=1, max_length=32768)
+    directory: str = Field(default="", max_length=128)
+    resources: dict[str, str] = Field(default_factory=dict, max_length=16)
+    asset_id: str | None = Field(default=None, min_length=1, max_length=128)
+    expected_version: int | None = Field(default=None, ge=1, strict=True)
 
 
 @router.post("/auth/register", status_code=201)
@@ -217,6 +228,26 @@ async def assets(
     principal=Depends(identity),
 ):
     return await service(request).list_assets(principal, kind=kind, status=status)
+
+
+@router.post("/skills/import", status_code=201)
+async def import_skill(body: SkillImportInput, request: Request, principal=Depends(identity)):
+    return await service(request).import_skill(principal, **body.model_dump())
+
+
+@router.get("/skills/{asset_id}/export")
+async def export_skill(asset_id: str, request: Request, principal=Depends(identity)):
+    return await service(request).export_skill(principal, asset_id)
+
+
+@router.get("/skills/{asset_id}/resources")
+async def skill_resource(
+    asset_id: str,
+    request: Request,
+    path: str = Query(min_length=1, max_length=128),
+    principal=Depends(identity),
+):
+    return await service(request).read_skill(principal, asset_id, path, active_only=False)
 
 
 @router.post("/assets", status_code=201)

@@ -7,6 +7,7 @@ from sqlalchemy import select, update
 from .errors import HarnessError
 from .models import Asset, AssetVersion, User
 from .security import canonical, digest
+from .skill_files import SkillFileService, export_bundle, string_list, validate_metadata
 from .store import asset_dict, scope, uid
 
 
@@ -18,7 +19,7 @@ def terms(text):
     return words
 
 
-class AssetService:
+class AssetService(SkillFileService):
     def __init__(self, store):
         self.store = store
 
@@ -106,6 +107,9 @@ class AssetService:
             raise HarnessError(403, "内部写入入口仅用于工具证据")
         if principal.role == "viewer" and not _internal:
             raise HarnessError(403, "viewer无权修改资产")
+        metadata = dict(validate_metadata({} if metadata is None else metadata))
+        if "tools" in metadata:
+            metadata["tools"] = string_list(metadata["tools"], "tools", 128)
         reserved = {
             "source_run_id",
             "tool_evidence",
@@ -155,7 +159,7 @@ class AssetService:
                 asset = await self.store.owned(session, Asset, asset_id, principal)
                 if expected_version is not None and asset.version != expected_version:
                     raise HarnessError(409, "资产版本已改变，请重新读取后重试")
-                old_metadata = dict(asset.attributes)
+                old_metadata = dict(validate_metadata(asset.attributes))
                 if not _internal and any(
                     key not in old_metadata or metadata[key] != old_metadata[key]
                     for key in reserved.intersection(metadata or {})
@@ -171,6 +175,10 @@ class AssetService:
                 }
                 asset.version += 1
                 if old_metadata.get("source_run_id") and not _internal:
+                    old_tools = string_list(old_metadata.get("tools", []), "来源 tools", 128)
+                    required_tools = string_list(
+                        list(dict.fromkeys([*old_tools, *metadata.get("tools", [])])), "tools", 128
+                    )
                     metadata = {
                         **(metadata or {}),
                         **{
@@ -182,6 +190,7 @@ class AssetService:
                         "manual_verified": False,
                         "user_verified": False,
                         "repair_verified": False,
+                        "tools": required_tools,
                     }
                     status = "draft"
             else:
@@ -189,6 +198,12 @@ class AssetService:
                     id=uid(), tenant_id=principal.tenant_id, owner_id=principal.user_id, version=1
                 )
                 session.add(asset)
+            if kind == "skill":
+                export_bundle(
+                    {"id": asset.id, "name": name, "content": content, "metadata": metadata}
+                )
+            else:
+                validate_metadata(metadata)
             asset.kind, asset.name, asset.content = kind, name, content
             asset.status, asset.attributes = status, metadata or {}
             self.snapshot(session, asset)
@@ -284,8 +299,24 @@ class AssetService:
         query_terms = terms(query)
         shortlist = []
         for asset in candidates:
-            metadata = asset["metadata"]
-            required_tools = set(metadata.get("tools", []))
+            try:
+                if asset["kind"] == "skill":
+                    bundle = export_bundle(asset)
+                    metadata = {
+                        **{
+                            key: value
+                            for key, value in asset["metadata"].items()
+                            if key != "resources"
+                        },
+                        "resource_paths": list(bundle["resources"]),
+                    }
+                    asset = {**asset, "metadata": metadata}
+                else:
+                    metadata = validate_metadata(asset["metadata"])
+                required_tools = set(string_list(metadata.get("tools", []), "tools", 128))
+            except HarnessError:
+                # 隔离旧记录与通用接口产生的异常元信息，避免挤掉其他有效候选。
+                continue
             if allowed_tools is not None and not required_tools.issubset(set(allowed_tools)):
                 continue
             descriptor = terms(
@@ -298,6 +329,10 @@ class AssetService:
                 + str(metadata.get("boundaries", []))
                 + " "
                 + str(metadata.get("trigger_conditions", {}))
+                + " "
+                + str(metadata.get("description", ""))
+                + " "
+                + str(metadata.get("directory", ""))
             )
             score = len(query_terms & descriptor)
             if score or asset["kind"] in {"preference", "constraint", "profile"}:
