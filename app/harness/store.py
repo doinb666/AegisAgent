@@ -33,6 +33,7 @@ def run_dict(run):
         "step",
         "approval",
         "parent_run_id",
+        "created",
     )
     return {key: getattr(run, key) for key in fields}
 

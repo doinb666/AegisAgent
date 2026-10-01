@@ -143,8 +143,37 @@ async def create_run(
 
 
 @router.get("/runs")
-async def runs(request: Request, principal=Depends(identity)):
-    return await service(request).list_runs(principal)
+async def runs(
+    request: Request,
+    query: str | None = Query(default=None, max_length=200),
+    status: Literal[
+        "queued", "running", "waiting_approval", "completed", "failed", "cancelled", "interrupted"
+    ] | None = None,
+    limit: int = Query(default=100, ge=1, le=100),
+    before: str | None = Query(default=None, max_length=128),
+    principal=Depends(identity),
+):
+    return await service(request).list_runs(principal, query, status, limit, before)
+
+
+@router.get("/workspace/overview")
+async def workspace_overview(request: Request, principal=Depends(identity)):
+    return await service(request).workspace_overview(principal)
+
+
+@router.get("/runs/{run_id}/files")
+async def run_files(run_id: str, request: Request, principal=Depends(identity)):
+    return await service(request).list_run_files(principal, run_id)
+
+
+@router.get("/runs/{run_id}/file")
+async def run_file(
+    run_id: str,
+    request: Request,
+    path: str = Query(min_length=1, max_length=512),
+    principal=Depends(identity),
+):
+    return await service(request).preview_run_file(principal, run_id, path)
 
 
 @router.get("/runs/{run_id}")

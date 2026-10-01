@@ -7,9 +7,12 @@ import time
 from sqlalchemy import delete, func, select, update
 from sqlalchemy.exc import IntegrityError
 
+from app.harness_tools.workspace import Workspace
+
 from .assets import AssetService
 from .context import SYSTEM_PREFIX
 from .errors import HarnessError, Principal
+from .inspection import InspectionService
 from .model_gateway import SharedModelGateway
 from .models import Asset, Feedback, Run, Token, ToolCall, User
 from .security import canonical, digest, password_hash, password_matches
@@ -26,6 +29,9 @@ class HarnessService(AssetService):
             SharedModelGateway(model_router, settings.max_model_calls) if model_router else None
         )
         self.tool_executor = tool_executor
+        self.inspection = InspectionService(
+            self.store, getattr(tool_executor, "workspace", None) or Workspace(settings.data_dir)
+        )
         self.workers = []
         self.wakeup = asyncio.Event()
         self.closing = False
@@ -397,12 +403,17 @@ class HarnessService(AssetService):
         async with self.store.sessions() as session:
             return run_dict(await self.store.owned(session, Run, run_id, principal))
 
-    async def list_runs(self, principal):
-        async with self.store.sessions() as session:
-            runs = await session.scalars(
-                select(Run).where(*scope(Run, principal)).order_by(Run.created.desc()).limit(100)
-            )
-            return [run_dict(run) for run in runs]
+    async def list_runs(self, principal, query=None, status=None, limit=100, before=None):
+        return await self.inspection.list_runs(principal, query, status, limit, before)
+
+    async def workspace_overview(self, principal):
+        return await self.inspection.overview(principal)
+
+    async def list_run_files(self, principal, run_id):
+        return await self.inspection.list_files(principal, run_id)
+
+    async def preview_run_file(self, principal, run_id, path):
+        return await self.inspection.preview_file(principal, run_id, path)
 
     async def events(self, principal, run_id, after=0):
         from .models import Event
