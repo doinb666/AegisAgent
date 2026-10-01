@@ -2,17 +2,19 @@
 const $ = (id) => document.getElementById(id);
 const apiRoot = "/api/v1";
 const state = {token: sessionStorage.getItem("aegis-token"), user: null, run: null, session: null,
-  view: "chat", cursor: 0, stream: null, assets: [], retry: 0, generation: 0, pendingRequest: null};
+  view: "chat", cursor: 0, stream: null, assets: [], editingAsset: null, generation: 0, pendingRequest: null};
 const statuses = {queued:"等待执行",running:"正在推进",waiting_approval:"等待你的审批",completed:"任务完成",failed:"执行失败",cancelled:"已停止",interrupted:"需要人工核对后恢复"};
 const kinds = {profile:"偏好",preference:"偏好",constraint:"约束",memory:"记忆",episodic:"经验",skill:"Skill",procedure:"步骤",project:"项目",document:"文档"};
 const assetStates = {draft:"候选",active:"已启用",retired:"已退役"};
 function notice(text) { $("notice").textContent = text; }
 async function api(path, options={}) {
+  const requestToken=state.token;
   const headers = new Headers(options.headers || {});
-  if (state.token) headers.set("Authorization", `Bearer ${state.token}`);
+  if (requestToken) headers.set("Authorization", `Bearer ${requestToken}`);
   if (options.body && !(options.body instanceof FormData)) headers.set("Content-Type", "application/json");
   const response = await fetch(apiRoot + path, {...options, headers});
   const data = await response.json();
+  if(requestToken!==state.token) throw new Error("账号已切换，请在当前空间重新操作。");
   if (!response.ok) {
     if (response.status === 401 && state.user) resetLogin();
     throw new Error(typeof data.detail === "string" ? data.detail : `请求失败 (${response.status})`);
@@ -27,6 +29,11 @@ async function guard(action, button=null) {
 function resetLogin() {
   state.generation++; state.stream?.abort(); state.user=null; state.token=null;
   state.pendingRequest=null; state.run=null; state.session=null;
+  state.editingAsset=null;$("skill-import-form").reset();closeSkillImport();
+  $("skill-import-form").querySelector('button[type="submit"]').disabled=false;
+  state.assets=[];$("asset-list").replaceChildren();
+  $("run-list").replaceChildren();$("asset-form").reset();$("upload-form").reset();$("member-form").reset();
+  newTask();
   sessionStorage.removeItem("aegis-pending-request"); sessionStorage.removeItem("aegis-last-run");
   sessionStorage.removeItem("aegis-token"); $("shell").hidden=true; $("auth").hidden=false;
 }
@@ -159,6 +166,9 @@ async function showView(view) {
   document.querySelectorAll("[data-view]").forEach(b=>b.classList.toggle("selected",b.dataset.view===view));
   if(!['chat','settings'].includes(view)) {
     $("asset-form").hidden=true; $("upload-form").hidden=view!=="documents"; $("add-asset").hidden=view==="documents";
+    $("skill-controls").hidden=view!=="skills";
+    closeSkillImport();
+    $("import-skill").disabled=state.user.role==="viewer";
     $("assets-description").textContent={memories:"偏好与约束跨会话保留。候选需要你确认，退役内容不再进入任务。",skills:"从执行经验中提炼的能力。检查适用边界与来源，再启用或修订。",documents:"上传资料供本账号检索。支持文本型 PDF、Markdown 与 TXT。",projects:"保存项目目标与边界。选择项目后，新任务在同一线程连续推进。"}[view];
     await loadAssets();
   }
@@ -167,14 +177,29 @@ document.querySelectorAll("[data-view]").forEach(b=>b.onclick=()=>guard(()=>show
 async function loadAssets() {
   const all=await api("/assets");
   const filter={skills:['skill','procedure'],memories:['profile','preference','constraint','memory','episodic'],projects:['project'],documents:['document']}[state.view];
-  state.assets=all.filter(a=>filter.includes(a.kind)); $("asset-list").replaceChildren();
-  if(!state.assets.length) { const empty=document.createElement("p");empty.className="empty";empty.textContent="这里还没有内容。添加资料或完成任务后，经验会逐步积累。";$("asset-list").append(empty); }
-  for(const asset of state.assets) {
+  state.assets=all.filter(a=>filter.includes(a.kind));
+  if(state.view==="skills") refreshSkillDirectories();
+  renderAssets();
+}
+function refreshSkillDirectories() {
+  const select=$("skill-directory-filter"), previous=select.value;
+  select.replaceChildren(new Option("全部目录", ""));
+  const directories=[...new Set(state.assets.map(a=>a.metadata.directory || "未分类"))].sort();
+  directories.forEach(directory=>select.add(new Option(directory,directory)));
+  if(directories.includes(previous)) select.value=previous;
+}
+function renderAssets() {
+  const directory=state.view==="skills" ? $("skill-directory-filter").value : "";
+  const assets=state.assets.filter(a=>!directory || (a.metadata.directory || "未分类")===directory);
+  $("asset-list").replaceChildren();
+  if(!assets.length) { const empty=document.createElement("p");empty.className="empty";empty.textContent="这里还没有内容。添加资料或完成任务后，经验会逐步积累。";$("asset-list").append(empty); }
+  for(const asset of assets) {
     const row=document.createElement("article"); row.className="asset-row";
     const h=document.createElement("h3");h.textContent=asset.name;
     const meta=document.createElement("div");meta.className="asset-meta";meta.textContent=`${kinds[asset.kind] || asset.kind} · ${assetStates[asset.status] || asset.status} · v${asset.version}`;
     const content=document.createElement("div"); content.className="asset-detail";content.textContent=asset.content.slice(0,2400);
     row.append(h,meta,content);
+    if(asset.kind==="skill") appendSkillControls(row,asset);
     if(asset.metadata.source_run_id) {const source=document.createElement("button");source.textContent="查看来源任务";source.onclick=()=>guard(()=>openRun(asset.metadata.source_run_id));row.append(source);}
     if(asset.kind==="project") {
       const use=document.createElement("button");use.textContent="在此项目开始任务";use.onclick=()=>{newTask();state.session=asset.id;$("message").value=`项目：${asset.name}\n约束：${asset.content}\n任务：`;};row.append(use);
@@ -183,7 +208,10 @@ async function loadAssets() {
       if(asset.status===next || asset.kind==="document") continue;
       const button=document.createElement("button");button.textContent=label;button.onclick=()=>guard(async()=>{await api(`/assets/${asset.id}/state`,{method:"POST",body:JSON.stringify({status:next})});await loadAssets();},button);row.append(button);
     }
-    const edit=document.createElement("button");edit.textContent="修订";edit.onclick=()=>{$("asset-form").hidden=false;$("asset-form").dataset.assetId=asset.id;$("asset-name").value=asset.name;$("asset-content").value=asset.content;$("asset-kind").value=asset.kind;};if(asset.kind!=="document")row.append(edit);
+    const edit=document.createElement("button");edit.textContent="修订";edit.onclick=()=>{
+      $("asset-form").hidden=false;state.editingAsset=asset;
+      $("asset-name").value=asset.name;$("asset-content").value=asset.content;$("asset-kind").value=asset.kind;
+    };if(asset.kind!=="document")row.append(edit);
     const history=document.createElement("button");history.textContent="版本记录";history.onclick=()=>guard(async()=>{
       row.querySelector(".version-history")?.remove(); const versions=document.createElement("div");versions.className="version-history";
       const entries=await api(`/assets/${asset.id}/history`);let pre=document.createElement("pre");pre.textContent=JSON.stringify(entries,null,2);versions.append(pre);
@@ -194,9 +222,85 @@ async function loadAssets() {
     $("asset-list").append(row);
   }
 }
-$("add-asset").onclick=()=>{$("asset-form").hidden=false;delete $("asset-form").dataset.assetId;$("asset-name").value="";$("asset-content").value="";$("asset-kind").value={skills:"skill",projects:"project",memories:"profile"}[state.view];$("asset-name").focus();};
+function downloadText(filename,content,type) {
+  const url=URL.createObjectURL(new Blob([content],{type}));
+  const link=document.createElement("a"); link.href=url;link.download=filename;
+  document.body.append(link);link.click();link.remove();
+  setTimeout(()=>URL.revokeObjectURL(url),1000);
+}
+function appendSkillControls(row,asset) {
+  const descriptor=document.createElement("p");descriptor.className="asset-meta";
+  const metadata=asset.metadata;
+  descriptor.textContent=`目录：${metadata.directory || "未分类"} · ${metadata.description || "请检查适用条件后启用"}`;
+  row.append(descriptor);
+  for(const [label,bundle] of [["导出 SKILL.md",false],["导出文件包",true]]) {
+    const button=document.createElement("button");button.textContent=label;
+    button.onclick=()=>guard(async()=>{
+      const result=await api(`/skills/${asset.id}/export`);
+      downloadText(bundle?`skill-${asset.id}.json`:"SKILL.md",bundle?JSON.stringify(result,null,2):result.document,bundle?"application/json":"text/markdown");
+    },button);row.append(button);
+  }
+  for(const path of Object.keys(metadata.resources || {})) {
+    const button=document.createElement("button");button.textContent=`查看 ${path}`;
+    button.onclick=()=>guard(async()=>{
+      const resource=await api(`/skills/${asset.id}/resources?path=${encodeURIComponent(path)}`);
+      let preview=row.querySelector(".skill-resource-preview");
+      if(!preview) {preview=document.createElement("pre");preview.className="skill-resource-preview";row.append(preview);}
+      preview.textContent=`${resource.path}\n\n${resource.content}`;
+    },button);row.append(button);
+  }
+}
+function closeSkillImport() {
+  $("skill-import-form").hidden=true;$("import-skill").setAttribute("aria-expanded","false");
+}
+$("skill-directory-filter").onchange=renderAssets;
+$("import-skill").onclick=()=>{
+  $("skill-import-form").hidden=false;$("skill-import-error").textContent="";
+  $("import-skill").setAttribute("aria-expanded","true");$("skill-file").focus();
+};
+$("close-skill-import").onclick=()=>{closeSkillImport();$("import-skill").focus();};
+$("skill-import-form").addEventListener("submit",async event=>{
+  event.preventDefault();const button=event.submitter;button.disabled=true;
+  const importToken=state.token, importGeneration=state.generation;
+  $("skill-import-error").textContent="";
+  try {
+    const file=$("skill-file").files[0];
+    if(!file) throw new Error("请先选择技能文件。");
+    const isBundle=file.name.toLowerCase().endsWith(".json");
+    if(!isBundle && !file.name.toLowerCase().endsWith(".md")) throw new Error("请选择 Markdown 或 JSON 文件。");
+    if(file.size>(isBundle?524288:32768)) throw new Error("技能文件超出大小限制。");
+    const bytes=await file.arrayBuffer();let text;
+    if(importToken!==state.token || importGeneration!==state.generation) return;
+    try {text=new TextDecoder("utf-8",{fatal:true}).decode(bytes);}
+    catch {throw new Error("技能文件必须使用有效的 UTF-8 编码。");}
+    let payload={document:text};
+    if(isBundle) {
+      try {payload=JSON.parse(text);}
+      catch {throw new Error("JSON 文件包格式无效，请检查文件内容。");}
+    }
+    if(!payload || typeof payload!=="object" || Array.isArray(payload) || typeof payload.document!=="string") throw new Error("文件包必须包含 document 技能文本。");
+    const directory=$("skill-directory").value.trim() || payload.directory || "";
+    await api("/skills/import",{method:"POST",body:JSON.stringify({document:payload.document,directory,resources:payload.resources || {}})});
+    $("skill-import-form").reset();closeSkillImport();
+    if(state.view==="skills") await loadAssets();
+    notice("已导入技能候选。审阅正文和资源后再启用。");$("import-skill").focus();
+  } catch(error) {
+    if(importToken===state.token && importGeneration===state.generation) {
+      $("skill-import-error").textContent=error.message;$("skill-import-error").focus();
+    }
+  } finally {if(importToken===state.token) button.disabled=false;}
+});
+$("add-asset").onclick=()=>{$("asset-form").hidden=false;state.editingAsset=null;$("asset-name").value="";$("asset-content").value="";$("asset-kind").value={skills:"skill",projects:"project",memories:"profile"}[state.view];$("asset-name").focus();};
 $("close-editor").onclick=()=>{$("asset-form").hidden=true;};
-$("asset-form").addEventListener("submit",event=>{event.preventDefault();guard(async()=>{const id=$("asset-form").dataset.assetId;await api(id?`/assets/${id}`:"/assets",{method:id?"PUT":"POST",body:JSON.stringify({kind:$("asset-kind").value,name:$("asset-name").value,content:$("asset-content").value,status:"draft"})});$("asset-form").hidden=true;await loadAssets();notice("已保存候选，可审阅后启用");});});
+$("asset-form").addEventListener("submit",event=>{
+  event.preventDefault();guard(async()=>{
+    const existing=state.editingAsset;
+    const payload={kind:$("asset-kind").value,name:$("asset-name").value,content:$("asset-content").value,status:"draft"};
+    if(existing) {payload.metadata=existing.metadata;payload.expected_version=existing.version;}
+    await api(existing?`/assets/${existing.id}`:"/assets",{method:existing?"PUT":"POST",body:JSON.stringify(payload)});
+    $("asset-form").hidden=true;state.editingAsset=null;await loadAssets();notice("已保存候选，可审阅后启用");
+  },event.submitter);
+});
 $("upload-form").addEventListener("submit",event=>{
   event.preventDefault();
   guard(async()=>{

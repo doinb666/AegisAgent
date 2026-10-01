@@ -57,6 +57,18 @@
       </section>
       <section id="assets-view" class="view assets-view" hidden>
         <div class="view-heading"><p id="assets-description"></p><button id="add-asset" class="primary">添加</button></div>
+        <div id="skill-controls" class="skill-toolbar" hidden>
+          <div><label for="skill-directory-filter">技能目录</label><select id="skill-directory-filter"><option value="">全部目录</option></select></div>
+          <button id="import-skill" type="button" aria-expanded="false" aria-controls="skill-import-form">导入技能文件</button>
+        </div>
+        <form id="skill-import-form" class="asset-editor" hidden>
+          <h3>导入技能候选</h3>
+          <p class="muted" id="skill-import-hint">选择 SKILL.md 或导出的 JSON 文件包。导入后需审阅启用，文本资源不会作为脚本执行。</p>
+          <label for="skill-file">技能文件</label><input id="skill-file" type="file" accept=".md,.json" required aria-describedby="skill-import-hint skill-import-error">
+          <label for="skill-directory">目录（可选，覆盖文件包目录）</label><input id="skill-directory" maxlength="128" placeholder="例如 coding/review" aria-describedby="skill-import-error">
+          <p id="skill-import-error" class="error" role="alert" tabindex="-1"></p>
+          <button type="submit" class="primary">导入为候选</button><button id="close-skill-import" type="button">取消</button>
+        </form>
         <form id="asset-form" class="asset-editor" hidden>
           <label for="asset-name">名称</label><input id="asset-name" required maxlength="200">
           <label for="asset-kind">类型</label><select id="asset-kind"><option value="profile">画像</option><option value="preference">偏好</option><option value="constraint">约束与边界</option><option value="memory">长期记忆</option><option value="episodic">情景经验</option><option value="skill">Skill</option><option value="procedure">程序性经验</option><option value="project">项目</option></select>
