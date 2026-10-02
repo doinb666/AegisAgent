@@ -1,12 +1,27 @@
 <!doctype html>
-<html lang="zh-CN">
+<html lang="zh-CN" data-theme="dark">
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
   <title>AegisCode · 你的任务工作台</title>
   <link rel="stylesheet" href="/static/styles.css">
+  <script src="/static/workspace-ui.js" defer></script>
   <script src="/static/app.js" defer></script>
 </head>
 <body>
+  <svg class="icon-sprite" aria-hidden="true" xmlns="http://www.w3.org/2000/svg"><defs>
+    <symbol id="icon-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+    <symbol id="icon-arrow" viewBox="0 0 24 24"><path d="M5 12h14m-6-6 6 6-6 6"/></symbol>
+    <symbol id="icon-refresh" viewBox="0 0 24 24"><path d="M20 7v5h-5M4 17v-5h5M6 7a7 7 0 0 1 12-1l2 3M4 15l2 3a7 7 0 0 0 12-1"/></symbol>
+    <symbol id="icon-panel" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M14 4v16"/></symbol>
+    <symbol id="icon-theme" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1.5 1.5m11 11L19 19M5 19l1.5-1.5m11-11L19 5"/></symbol>
+    <symbol id="icon-chat" viewBox="0 0 24 24"><path d="M20 15a3 3 0 0 1-3 3H8l-4 3V6a3 3 0 0 1 3-3h10a3 3 0 0 1 3 3Z"/><path d="M8 8h8M8 12h5"/></symbol>
+    <symbol id="icon-folder" viewBox="0 0 24 24"><path d="M3 7V5a1 1 0 0 1 1-1h6l2 3h8a1 1 0 0 1 1 1v11H3Z"/></symbol>
+    <symbol id="icon-memory" viewBox="0 0 24 24"><path d="M9 4a3 3 0 0 0-5 3 4 4 0 0 0-1 7 4 4 0 0 0 6 6M15 4a3 3 0 0 1 5 3 4 4 0 0 1 1 7 4 4 0 0 1-6 6M12 3v18M7 9l5 3 5-3M6 16l6-4 6 4"/></symbol>
+    <symbol id="icon-skill" viewBox="0 0 24 24"><path d="m13 3-8 11h6l-1 7 9-12h-6Z"/></symbol>
+    <symbol id="icon-book" viewBox="0 0 24 24"><path d="M12 5c-3-2-6-2-9-1v15c3-1 6-1 9 1 3-2 6-2 9-1V4c-3-1-6-1-9 1Zm0 0v15"/></symbol>
+    <symbol id="icon-settings" viewBox="0 0 24 24"><path d="M5 4v16M12 4v16M19 4v16M2 8h6M9 16h6M16 10h6"/></symbol>
+  </defs></svg>
+  <button id="theme-toggle" class="theme-toggle" type="button" aria-label="切换为浅色主题"><svg class="icon" aria-hidden="true"><use href="#icon-theme"/></svg><span id="theme-label">浅色主题</span></button>
   <div id="auth" class="auth-screen">
     <div class="auth-intro"><span class="wordmark">AegisCode<span class="brand-dot"></span></span>
       <h1>任务有进度，<br>经验有归处。</h1><p>问答、代码与知识工作，在一个可审查的空间持续推进。</p>
@@ -22,36 +37,38 @@
   <div id="shell" class="shell" hidden>
     <aside class="sidebar">
       <a class="wordmark" href="/">AegisCode<span class="brand-dot"></span></a>
-      <button id="new-task" class="new-task">＋ 新任务 <kbd>Alt N</kbd></button>
+      <button id="new-task" class="new-task"><span><svg class="icon" aria-hidden="true"><use href="#icon-plus"/></svg>新任务</span><kbd>Alt N</kbd></button>
       <nav aria-label="工作台导航">
-        <button data-view="chat" class="nav-button selected">任务空间<span>01</span></button>
-        <button data-view="projects" class="nav-button">项目<span>02</span></button>
-        <button data-view="memories" class="nav-button">长期记忆<span>03</span></button>
-        <button data-view="skills" class="nav-button">Skills<span>04</span></button>
-        <button data-view="documents" class="nav-button">知识库<span>05</span></button>
-        <button data-view="settings" class="nav-button">能力与设置<span>06</span></button>
+        <button data-view="chat" class="nav-button selected"><svg class="icon" aria-hidden="true"><use href="#icon-chat"/></svg>任务空间</button>
+        <button data-view="projects" class="nav-button"><svg class="icon" aria-hidden="true"><use href="#icon-folder"/></svg>项目</button>
+        <button data-view="memories" class="nav-button"><svg class="icon" aria-hidden="true"><use href="#icon-memory"/></svg>长期记忆</button>
+        <button data-view="skills" class="nav-button"><svg class="icon" aria-hidden="true"><use href="#icon-skill"/></svg>Skills</button>
+        <button data-view="documents" class="nav-button"><svg class="icon" aria-hidden="true"><use href="#icon-book"/></svg>知识库</button>
+        <button data-view="settings" class="nav-button"><svg class="icon" aria-hidden="true"><use href="#icon-settings"/></svg>能力与设置</button>
       </nav>
-      <div class="section-caption">最近的任务 <button id="refresh" aria-label="刷新任务">↻</button></div>
-      <div id="run-list" class="run-list"></div>
+      <div class="section-caption">任务记录 <button id="refresh" aria-label="刷新任务"><svg class="icon" aria-hidden="true"><use href="#icon-refresh"/></svg></button></div>
+      <div class="run-controls"><label for="run-search" class="sr-only">搜索任务</label><input id="run-search" type="search" maxlength="200" placeholder="搜索任务内容…"><label for="run-filter" class="sr-only">筛选任务状态</label><select id="run-filter"><option value="">全部状态</option><option value="queued">等待执行</option><option value="running">正在推进</option><option value="waiting_approval">等待审批</option><option value="completed">任务完成</option><option value="failed">执行失败</option><option value="cancelled">已停止</option><option value="interrupted">需要核对</option></select></div>
+      <div id="run-list" class="run-list" aria-live="polite"></div>
+      <button id="runs-more" class="runs-more" hidden>加载更多任务</button>
       <div class="sidebar-footer"><div id="account" class="account"></div><button id="logout">退出登录</button></div>
     </aside>
     <main class="main">
-      <header class="topbar"><div><span class="eyebrow">工作空间 / <span id="location">任务</span></span><h2 id="view-title">任务空间</h2><div id="memory-preview" class="memory-preview"></div></div>
-        <span id="connection" class="status-tag">已连接</span></header>
+      <header class="topbar"><div><span class="eyebrow">工作空间 / <span id="location">任务</span></span><h2 id="view-title">任务空间</h2><div id="memory-preview" class="memory-preview"></div><p id="workspace-overview" class="workspace-overview">正在读取本人任务与资产…</p></div>
+        <div class="topbar-actions"><span id="connection" class="status-tag">尚未连接任务</span><button id="inspector-toggle" class="icon-button" aria-label="折叠审查区" aria-expanded="true" aria-controls="inspector"><svg class="icon" aria-hidden="true"><use href="#icon-panel"/></svg></button></div></header>
       <section id="chat-view" class="view chat-view">
         <div id="conversation" class="conversation" aria-live="polite">
           <div id="welcome" class="welcome"><span class="eyebrow">从一个清楚的目标开始</span><h1>今天，推进什么？</h1>
             <p>描述任务、补充约束，或先上传资料。需要写文件和执行代码时，我会请求你的审批。</p>
-            <div class="suggestions"><button data-prompt="根据我的知识库回答问题，并列出来源和不足。">从资料中找答案 <span>↗</span></button>
-              <button data-prompt="帮我审查代码。先列出所需文件与检查计划，再执行只读分析。">审查代码与边界 <span>↗</span></button>
-              <button data-prompt="我希望你记住：回答使用中文，先给结论，未经确认不要修改文件。">建立我的协作偏好 <span>↗</span></button></div>
+            <div class="suggestions"><button data-prompt="根据我的知识库回答问题，并列出来源和不足。">从资料中找答案 <svg class="icon" aria-hidden="true"><use href="#icon-arrow"/></svg></button>
+              <button data-prompt="帮我审查代码。先列出所需文件与检查计划，再执行只读分析。">审查代码与边界 <svg class="icon" aria-hidden="true"><use href="#icon-arrow"/></svg></button>
+              <button data-prompt="我希望你记住：回答使用中文，先给结论，未经确认不要修改文件。">建立我的协作偏好 <svg class="icon" aria-hidden="true"><use href="#icon-arrow"/></svg></button></div>
           </div>
         </div>
         <form id="composer" class="composer"><label for="message" class="sr-only">描述你的任务</label>
           <textarea id="message" placeholder="描述任务，或添加需要遵守的约束…" rows="3" maxlength="16000" required></textarea>
           <div class="composer-bottom"><div><label for="mode" class="sr-only">执行方式</label><select id="mode"><option value="react">直接执行</option><option value="plan">先规划</option><option value="reflection">审查回答</option></select>
             <label for="model" class="sr-only">模型</label><select id="model"><option value="">自动选择模型</option></select></div>
-            <button id="send" class="primary" type="submit">开始任务 <span>↗</span></button></div>
+            <button id="send" class="primary" type="submit">开始任务 <svg class="icon" aria-hidden="true"><use href="#icon-arrow"/></svg></button></div>
           <p class="composer-hint">Enter 换行 · Ctrl Enter 发送 · 外部工具内容仅作为证据</p>
         </form>
       </section>
@@ -78,16 +95,17 @@
         <form id="upload-form" class="upload-area" hidden><label for="document-file">上传 TXT、Markdown 或 PDF</label><input id="document-file" type="file" accept=".txt,.md,.pdf" required><button class="primary">上传资料</button></form>
         <div id="asset-list" class="asset-list"></div>
       </section>
-      <section id="settings-view" class="view settings-view" hidden><h3>当前能力</h3><p>模型与隔离服务由服务端配置，页面不会显示任何密钥。</p><pre id="capabilities"></pre>
+      <section id="settings-view" class="view settings-view" hidden><h3>当前能力</h3><p class="muted">按服务端配置展示。配置存在不代表连接健康或任务已验证。</p><dl id="capability-list" class="capability-list"></dl><details class="capability-evidence"><summary>查看完整配置证据</summary><pre id="capabilities"></pre></details>
         <details><summary>企业成员管理</summary><form id="member-form"><label for="member-name">成员账号</label><input id="member-name" required><label for="member-password">初始密码</label><input id="member-password" type="password" minlength="8" required><label for="member-role">角色</label><select id="member-role"><option value="operator">操作员</option><option value="viewer">只读成员</option></select><button class="primary">创建成员</button></form></details></section>
       <p id="notice" class="notice" role="status" aria-live="polite"></p>
     </main>
-    <aside class="inspector"><div class="inspector-heading"><span class="eyebrow">任务审查</span><h3>运行与证据</h3></div>
+    <aside id="inspector" class="inspector" aria-label="任务审查"><div class="inspector-heading"><span class="eyebrow">任务审查</span><h3>运行与证据</h3></div>
       <div id="run-status" class="run-status">尚未开始任务</div><div id="run-meta" class="run-meta"></div>
       <div id="approval" class="approval" hidden><h4>需要你的批准</h4><p>请核对工具及完整参数。批准仅对本次操作有效。</p><pre id="approval-data"></pre><button id="approve" class="primary">批准这次操作</button><button id="reject" class="danger">拒绝</button></div>
       <button id="cancel" class="secondary" hidden>停止任务</button>
       <div id="feedback" class="feedback" hidden><h4>任务是否达到目标？</h4><button id="success">已解决</button><button id="failure">仍有问题</button><p class="muted">反馈用于验证经验，候选能力可在 Skills 中管理。</p></div>
       <div class="section-caption">执行记录</div><ol id="timeline" class="timeline"></ol>
+      <section class="file-review" aria-labelledby="files-heading"><div class="section-caption"><h4 id="files-heading">任务文件</h4><button id="files-refresh" aria-label="刷新任务文件"><svg class="icon" aria-hidden="true"><use href="#icon-refresh"/></svg></button></div><p class="muted">只读预览本人任务文件，最多读取 64 KiB。</p><div id="file-list" class="file-list" aria-live="polite">打开任务后可查看文件。</div><pre id="file-preview" class="file-preview" tabindex="0" aria-label="文件内容预览" hidden></pre></section>
     </aside>
   </div>
 </body>
