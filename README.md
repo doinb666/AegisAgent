@@ -20,11 +20,11 @@ AegisCode 是基于 AegisAgent 升级的个人与企业问答、文档和代码�
 | 外部 MCP | 官方SDK接入运维配置的HTTP服务；工具允许列表、租户/用户绑定、超时与响应预算 |
 | 知识问答 | TXT/Markdown/文本PDF解析、分块BM25；可选Milvus向量 + RRF + Cross-Encoder，失败明确降级 |
 | 模型兜底 | 多个OpenAI兼容endpoint、优先级路由、独立三态熔断、60秒恢复探测 |
-| 工作台与安装 | AegisCode中文网页；源码、wheel、个人/企业Docker、Windows便携EXE与安装器构建 |
+| 工作台与安装 | 深色/浅色中文桌面工作台、真实任务检索与游标分页、证据审查和只读文件预览；源码、wheel、Docker、Windows EXE与安装器构建 |
 
-详细能力与证据：[现状核查](docs/升级方案/01-现状核查与调研.md)、[架构与验收](docs/升级方案/02-MVP架构与验收.md)、[MVP验收](docs/升级方案/04-验收与部署记录.md)、[0.2.1交付记录](docs/升级方案/08-0.2.1交付与同步记录.md)。
+详细能力与证据：[现状核查](docs/升级方案/01-现状核查与调研.md)、[架构与验收](docs/升级方案/02-MVP架构与验收.md)、[MVP验收](docs/升级方案/04-验收与部署记录.md)、[0.2.1交付记录](docs/升级方案/08-0.2.1交付与同步记录.md)、[0.2.2源码能力与交付核验](docs/升级方案/11-0.2.2交付与源码能力核验.md)。
 
-![AegisCode 工作台](docs/升级方案/截图/02-任务工作台.png)
+![AegisCode 工作台](docs/升级方案/截图/0.2.2/00-深色桌面工作台.png)
 
 ## 快速开始
 
@@ -76,6 +76,8 @@ AEGIS_DATA_DIR=data
 4. 完成后反馈成功或失败；在「Skills」检查候选来源与适用边界，再决定启用、修订或退役。候选不自动成为可信能力。
 5. 网络断开时任务由后台继续处理；页面恢复事件，不重复创建任务。`interrupted` 表示副作用结果未知，应先核对外部状态。
 
+左侧搜索任务并筛选状态，每页20项；右侧可展开完整事件证据、只读预览本人任务文件。主题切换保存在当前浏览器，折叠审查区可扩大中央线程。顶部统计来自本人数据库记录，没有模拟业务指标。
+
 完整操作、权限和恢复说明见 [用户使用手册](docs/使用手册.md)。
 
 Skill 文件快速体验：下载 [review-python 示例](docs/examples/skills/review-python/SKILL.md)，在「Skills」导入，检查后启用。可按目录筛选，导出 SKILL.md 或包含文本资源的 JSON 文件包；导入资源不会作为脚本运行。
@@ -103,7 +105,7 @@ Windows构建：
 .venv/Scripts/python.exe scripts/build_windows.py
 ```
 
-输出 `dist/AegisCode-Setup.exe`、`dist/AegisCode-portable.zip` 与 `dist/AegisCode/AegisCode.exe`；便携版须保留整个目录及 `_internal`。这些是本地构建产物，仓库不内置二进制，也尚未发布签名Release。wheel使用 `python -m build --wheel` 构建，安装后执行 `aegiscode`。
+输出 `dist/AegisCode-Setup.exe`、`dist/AegisCode-portable.zip` 与 `dist/AegisCode/AegisCode.exe`；便携版须保留整个目录及 `_internal`。这些是本地构建产物，仓库不内置二进制，也尚未发布签名Release。wheel使用 `python scripts/build_wheel.py` 在临时源码副本构建并校验，避免历史构建缓存带入已删除模块；安装后执行 `aegiscode`。
 
 沙箱、MCP、模型兜底、可选RAG及运维配置见 [安装与运维](docs/升级方案/06-安装与运维.md)。无沙箱时拒绝代码执行，不改用宿主执行。
 
@@ -132,7 +134,7 @@ API文档：`/docs`；基础健康探针：`/api/v1/health`；数据库readiness
 
 ## 验证与限制
 
-2026-10-01回归：166项通过、1项因Windows符号链接权限跳过。已完成真实PostgreSQL双实例与10/50/100并发、官方MCP SDK、本地HTTP服务、Docker隔离、浏览器与安装入口验收；本轮新增Skill文件、权限边界、版本冲突、元数据预算及渐进读取测试。压测模型为确定性替身，不能代表商业模型延迟或效果。
+2026-10-02后端回归：175项通过、1项因Windows符号链接权限跳过。工作台新增主题、分页、文件预览、乱序请求、XSS、viewer权限和390/768/1440屏宽的真实Edge验收通过；旧业务与Skill浏览器流程继续通过。0.2.2默认Dockerfile构建、依赖兼容、非root运行和API专项验证通过。历史真实PostgreSQL双实例与10/50/100并发、官方MCP SDK、本地HTTP服务和Docker隔离证据见验收记录；压测模型为确定性替身，不能代表商业模型延迟或效果。
 
 尚未实现在线RL/LoRA、自动安装/执行生成工具、企业共享技能发布、独立技能回放晋升与训练平台。真实模型、Prompt Cache收益、真实Milvus/重排质量、干净Windows安装及Linux沙箱Compose组合仍需专项验收。安全分类与反思可能出错，不能代替权限规则和人工审阅。
 
