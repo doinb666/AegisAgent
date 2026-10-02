@@ -46,7 +46,7 @@ def asset_dict(asset):
 class Store:
     def __init__(self, settings):
         self.settings = settings
-        self.engine = create_async_engine(settings.resolved_database_url())
+        self.engine = create_async_engine(settings.resolved_database_url(), pool_pre_ping=True)
         self.sessions = async_sessionmaker(self.engine, expire_on_commit=False)
         self.write_lock = asyncio.Lock()
         if self.engine.dialect.name == "sqlite":
