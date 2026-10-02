@@ -6,6 +6,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends git \
     && rm -rf /var/lib/apt/lists/* \
     && groupadd --gid 10001 aegis && useradd --uid 10001 --gid aegis --no-create-home aegis
 COPY requirements-harness.txt ./
+ARG PIP_DOWNLOAD_TIMEOUT=120
+ENV PIP_DEFAULT_TIMEOUT=${PIP_DOWNLOAD_TIMEOUT}
 RUN pip install -r requirements-harness.txt
 ENV TIKTOKEN_CACHE_DIR=/app/tokenizer-cache
 RUN python -c "import tiktoken; tiktoken.get_encoding('cl100k_base')" \
