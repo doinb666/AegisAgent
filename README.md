@@ -1,34 +1,44 @@
 # AegisAgent · AegisCode
 
-AegisCode 是基于 AegisAgent 升级的个人与企业问答、文档和代码任务工作台。通过 Query Loop、原生 Tool Calling 和持久化任务记录执行任务，将经过审阅的偏好、约束和经验跨会话复用。
+**把问答、代码任务、长期记忆与技能放在一个可审查的工作台。**
 
-当前是受控自进化 MVP：经验与技能在推理时积累，**不会在线训练或更新模型权重**。界面借鉴 Coding Agent 的任务工作方式，使用自主设计，不宣称复刻 Codex 或 Claude Code 源码。
+AegisCode 面向个人开发者和企业成员：描述目标，由 Agent 规划、调用工具并保留执行证据；需要写文件、运行代码或调用外部服务时，由用户批准。经过审阅的偏好、约束和任务经验可以跨会话复用。
 
-## 当前能力
-
-| 能力 | 当前实现 |
-|---|---|
-| 执行闭环 | ReAct / Plan，规划失败回退，默认10步预算，反思与质量反馈 |
-| 用户与权限 | 登录、注销、租户与用户隔离；admin / operator / viewer；业务资源默认用户私有 |
-| 持久任务 | SQLite个人版 / PostgreSQL企业版；幂等创建、Worker租约、检查点、取消、SSE游标重连 |
-| 长期记忆 | 画像、偏好、约束、情景与程序经验；登录加载、按需召回、版本修订与退役 |
-| 自进化 | 后台有界提炼成功/失败轨迹为草稿；用户审阅启用，修改后重新审核；保留来源 |
-| Skill文件生态 | SKILL.md / JSON文件包导入导出、目录与描述路由、文本资源审核与渐进读取、修订版本冲突保护 |
-| 上下文 | 大工具结果外置artifact，摘要与近期窗口、字符预算、按需读取；缓存收益尚未实测 |
-| 多 Agent | 主控只读委派、父权限交集、整批预算/配额预检、汇总预留、失效父子回收与完整答案引用；Fork/Team及独立仓库Worktree准备 |
-| 安全执行 | 规则过滤、工具参数校验、模型风险分类、精确参数人工审批；代码仅在配置的Docker沙箱运行 |
-| 外部 MCP | 官方SDK接入运维配置的HTTP服务；工具允许列表、租户/用户绑定、超时与响应预算 |
-| 知识问答 | TXT/Markdown/文本PDF解析、分块BM25；可选Milvus向量 + RRF + Cross-Encoder，失败明确降级 |
-| 模型兜底 | 多个OpenAI兼容endpoint、优先级路由、独立三态熔断、60秒恢复探测 |
-| 工作台与安装 | 深色/浅色中文桌面工作台、真实任务检索与游标分页、证据审查和只读文件预览；源码、wheel、Docker、Windows EXE与安装器构建 |
-
-详细能力与证据：[现状核查](docs/升级方案/01-现状核查与调研.md)、[架构与验收](docs/升级方案/02-MVP架构与验收.md)、[MVP验收](docs/升级方案/04-验收与部署记录.md)、[0.2.1交付记录](docs/升级方案/08-0.2.1交付与同步记录.md)、[0.2.2源码能力与交付核验](docs/升级方案/11-0.2.2交付与源码能力核验.md)。
+[安装与启动](#安装与启动) · [模型配置](#模型配置) · [使用方式](#使用方式) · [项目亮点](#项目亮点) · [使用手册](docs/使用手册.md)
 
 ![AegisCode 工作台](docs/升级方案/截图/0.2.2/00-深色桌面工作台.png)
 
-## 快速开始
+## 安装与启动
 
-要求 Python 3.12+。Docker、Milvus及模型服务按需配置，个人基础版不依赖Redis或Milvus。
+| 方式 | 适用场景 | 需要准备 |
+|---|---|---|
+| Windows EXE / 安装器 | 日常桌面使用 | Windows；模型服务配置；发布状态见下文 |
+| Python 源码 / wheel | 开发者、跨平台本地运行 | Python 3.12+ |
+| Docker 个人版 | 简单部署和持久化 | Docker Compose；SQLite 数据卷 |
+| Docker 企业版 | PostgreSQL 持久化部署 | Docker Compose；数据库密码；自己的 TLS 入口 |
+
+基础工作台不要求 Redis、Milvus 或 Node.js。使用模型需要可用的模型服务；执行代码需要单独配置 Docker 沙箱。
+
+### Windows 桌面使用
+
+公开发布入口：[GitHub Releases](https://github.com/doinb666/AegisAgent/releases)。**当前尚未发布可直接下载的安装包**，请先使用源码方式，或在 Windows 本地构建：
+
+```powershell
+git clone https://github.com/doinb666/AegisAgent.git
+cd AegisAgent
+python -m venv .venv
+.venv/Scripts/python.exe -m pip install ".[dev]"
+.venv/Scripts/python.exe scripts/build_windows.py
+```
+
+构建后任选一种方式：
+
+- 双击 `dist/AegisCode-Setup.exe`，按安装器提示安装。
+- 解压 `dist/AegisCode-portable.zip`，双击其中的 `AegisCode.exe`。保留整个目录及 `_internal`。
+
+EXE 默认仅监听本机，自动打开浏览器；配置与数据默认存放在 `%LOCALAPPDATA%/AegisCode/`。在该目录创建 `.env`，配置模型后重启。支持 `--port`、`--data-dir`、`--config`、`--no-browser`。安装包不包含模型权重，当前构建未做代码签名。
+
+### Python 源码启动
 
 ```bash
 git clone https://github.com/doinb666/AegisAgent.git
@@ -41,7 +51,7 @@ Windows PowerShell：
 ```powershell
 .venv/Scripts/python.exe -m pip install -r requirements-harness.txt
 Copy-Item .env.example .env
-# 编辑 .env，填写自己的模型参数
+# 填写自己的模型配置，见下文
 .venv/Scripts/python.exe -m app.launcher
 ```
 
@@ -51,110 +61,122 @@ Linux / macOS：
 source .venv/bin/activate
 pip install -r requirements-harness.txt
 cp .env.example .env
-# 编辑 .env，填写自己的模型参数
+# 填写自己的模型配置，见下文
 python -m app.launcher
 ```
 
-浏览器打开 `http://127.0.0.1:8000`，先创建账号再登录。启动器默认仅监听本机。未配置可用模型时任务会明确失败；账号、资产和工作台仍可使用。
+浏览器访问 **http://127.0.0.1:8000**，先创建个人账号再登录。密码至少 8 个字符。8000 已占用时：
 
-最小 `.env` 配置：
-
-```dotenv
-OPENAI_API_KEY=替换为自己的密钥
-OPENAI_API_BASE=https://api.openai.com/v1
-OPENAI_MODEL=替换为实际可用且支持工具调用的模型
-AEGIS_DATA_DIR=data
+```powershell
+.venv/Scripts/python.exe -m app.launcher --port 8001
 ```
 
-不要提交 `.env`。EXE 默认从 `%LOCALAPPDATA%/AegisCode/` 读取 `.env` 并保存数据；可用 `--config` 指定配置目录。源码、wheel和EXE均支持 `--port`、`--data-dir`、`--no-browser`。
+wheel 构建与安装：
 
-## 如何使用
+```bash
+python -m pip install ".[dev]"
+python scripts/build_wheel.py
+# 安装 dist 中实际生成的 aegiscode-版本号-py3-none-any.whl
+python -m pip install dist/aegiscode-0.2.2-py3-none-any.whl
+aegiscode
+```
 
-1. 在「长期记忆」记录协作偏好、硬约束和边界，审阅后点击「启用」。再次登录自动加载本人有效记忆。
-2. 在「知识库」上传资料；扫描PDF须先OCR。在「项目」保存目标与约束，再从项目创建任务。
-3. 在任务空间描述目标与验收标准，选择执行策略及模型，查看状态和事件。写文件、外部MCP和代码执行会显示准确工具参数供审批。
-4. 完成后反馈成功或失败；在「Skills」检查候选来源与适用边界，再决定启用、修订或退役。候选不自动成为可信能力。
-5. 网络断开时任务由后台继续处理；页面恢复事件，不重复创建任务。`interrupted` 表示副作用结果未知，应先核对外部状态。
+### Docker 部署
 
-左侧搜索任务并筛选状态，每页20项；右侧可展开完整事件证据、只读预览本人任务文件。主题切换保存在当前浏览器，折叠审查区可扩大中央线程。顶部统计来自本人数据库记录，没有模拟业务指标。
+先复制 `.env.example` 为 `.env` 并填写模型配置。
 
-完整操作、权限和恢复说明见 [用户使用手册](docs/使用手册.md)。
-
-Skill 文件快速体验：下载 [review-python 示例](docs/examples/skills/review-python/SKILL.md)，在「Skills」导入，检查后启用。可按目录筛选，导出 SKILL.md 或包含文本资源的 JSON 文件包；导入资源不会作为脚本运行。
-
-## Docker 与 Windows 安装
-
-个人版（SQLite）：
+个人版使用 SQLite：
 
 ```bash
 docker compose -f docker-compose.personal.yml up --build -d
 ```
 
-企业版：自行设置 `.env` 中的 `POSTGRES_PASSWORD`，再运行：
+企业版使用 PostgreSQL，先在 `.env` 设置自己的 `POSTGRES_PASSWORD`：
 
 ```bash
 docker compose up --build -d
 ```
 
-两种方式默认发布本机8000端口并持久化数据卷。需要远程访问时，在自己的TLS入口后部署，生产多副本增加共享限流和备份。企业成员由管理员在「能力与设置」创建；admin不隐式读取其他用户的资产。
+默认访问 http://127.0.0.1:8000，数据通过卷持久化。管理员在「能力与设置」创建企业成员，支持管理员、操作员和只读成员。远程部署通过自己的 TLS 入口访问；多副本部署还需配置共享限流、备份和沙箱隔离。
 
-Windows构建：
+升级时备份配置与数据，更新源码后重新构建并启动。不要删除数据卷；现有任务出现 `interrupted` 时先核对工具副作用，避免重复执行。
 
-```powershell
-.venv/Scripts/python.exe -m pip install ".[dev]"
-.venv/Scripts/python.exe scripts/build_windows.py
+## 模型配置
+
+最小 `.env` 示例：
+
+```dotenv
+OPENAI_API_KEY=替换为自己的密钥
+OPENAI_API_BASE=https://api.openai.com/v1
+OPENAI_MODEL=替换为可用且支持工具调用的模型
+AEGIS_DATA_DIR=data
 ```
 
-输出 `dist/AegisCode-Setup.exe`、`dist/AegisCode-portable.zip` 与 `dist/AegisCode/AegisCode.exe`；便携版须保留整个目录及 `_internal`。这些是本地构建产物，仓库不内置二进制，也尚未发布签名Release。wheel使用 `python scripts/build_wheel.py` 在临时源码副本构建并校验，避免历史构建缓存带入已删除模块；安装后执行 `aegiscode`。
+支持多个 OpenAI 兼容模型服务，按优先级切换；每个模型路由具有独立熔断状态。具体配置见 [安装与运维](docs/升级方案/06-安装与运维.md)。密钥只放环境变量或本地 `.env`，不要提交到 Git。
 
-沙箱、MCP、模型兜底、可选RAG及运维配置见 [安装与运维](docs/升级方案/06-安装与运维.md)。无沙箱时拒绝代码执行，不改用宿主执行。
+未配置模型时仍可登录、管理记忆和资料；执行任务会明确提示失败。模型列表表示已配置，连通性需实际调用验证。
 
-## 技术栈与结构
+## 使用方式
 
-主入口：Python 3.12、FastAPI、SQLAlchemy async、SQLite/PostgreSQL、OpenAI兼容工具调用、MCP SDK、Docker、静态HTML/CSS/JavaScript、PyInstaller。
+1. **建立个人偏好**：在「长期记忆」保存回答风格、约束和边界，审阅后启用。再次登录会加载本人有效偏好，任务开始时按需召回相关经验。
+2. **提供资料和项目背景**：在「知识库」上传 TXT、Markdown 或文本 PDF；在「项目」保存目标和约束，再创建任务。扫描 PDF 需先 OCR。
+3. **执行任务**：描述目标与验收要求，选择直接执行或先规划。查看任务进度、完整工具证据和本人工作区文件；有副作用的操作逐次审批。
+4. **复用与改进技能**：任务结束后反馈成功或失败，在「Skills」审查候选经验的来源、适用条件和边界，再启用、修订或退役。可导入导出 SKILL.md 及文本资源包。
+5. **恢复长任务**：断开页面连接不会取消后台任务，重新打开后恢复持久事件。需要停止时使用「停止任务」；未知副作用状态需人工核对。
 
-旧Agent编排、Redis记忆/缓存、工具注册/路由与独立RAG生成链已移除；工作台执行与记忆由 `app/harness/` 承担。Milvus、Reranker、计算工具、模型路由/熔断及ETL仍有实际消费者。完整运行与可选演示依赖在 `requirements.txt`，基础工作台依赖在 `requirements-harness.txt`，重型检索按需安装 `pip install ".[rag]"`；`legacy` extra保留名称，仅安装Gradio演示依赖。
-
-旧无鉴权 `/chat` 和文档路由源码暂时保留，但不在主入口挂载；新增Gradio独立演示仍引用旧HTTP路径，其与当前后端的兼容性**未验证**。删除依据、保留边界与回归结果见 [全目录冗余清理记录](docs/升级方案/10-全目录冗余清理记录.md)。
+可以从以下任务开始：
 
 ```text
-app/harness/        身份、任务事实源、执行闭环、上下文与经验资产
-app/harness_tools/  工作区、沙箱、MCP、仓库与知识检索
-app/api/           鉴权API、SSE与请求边界
-app/web/           AegisCode工作台
-app/etl/           有资源预算的独立文档解析进程
-app/core/          复用的意图识别、计算工具与可选重排
-app/infrastructure/ 模型路由、向量库及保留的旧追踪/数据库组件
-scripts/           安装、打包、浏览器与专项验收
-tests/             权限、恢复、工具、API及并发回归
-docs/              使用说明、设计决策与验收证据
+根据我的知识库回答问题，列出来源，并指出证据不足的部分。
+审查代码中的空输入、异常处理和权限边界，先收集证据再给结论。
+将本次失败原因整理成技能候选，写清触发条件、修复步骤和验证方法。
 ```
 
-API文档：`/docs`；基础健康探针：`/api/v1/health`；数据库readiness：`/api/v1/health/ready`。业务接口均需要Bearer令牌，创建任务还须 `Idempotency-Key`。身份、任务、资产和审批示例见使用手册。
+Skill 快速体验：[下载示例 SKILL.md](docs/examples/skills/review-python/SKILL.md)，在「Skills」导入并审阅启用。资源只作为文本读取，不会自动执行脚本。
 
-## 验证与限制
+### 多 Agent 和代码工作区
 
-2026-10-02最新源码后端回归：301项通过、1项因Windows符号链接权限跳过（185.80秒）；本轮新增126项路径、父子恢复和委派测试。修改范围Ruff、全仓F类、compileall及三批独立规格/质量审查通过，证据见[多Agent协作验收](docs/升级方案/12-多Agent协作补齐与验收.md)。
+当前主 Agent 可通过工具委派最多两个只读子任务，统一汇总结果；子权限取父权限交集，禁止递归和危险操作，预算为主控汇总预留空间。
 
-既有工作台主题、分页、文件预览、乱序请求、XSS、viewer权限和390/768/1440屏宽已在0.2.2真实Edge验收；本轮现有8001入口只读检查返回200、登录可见且无页面错误。独立浏览器测试服务启动被自动审批拒绝，最新后端尚未完成浏览器端到端验收，8001仍运行此前进程。本轮只交付源码修复，既有0.2.2的EXE、wheel和Docker产物未重建，不包含这三批新增修复。
+- **Fork**：继承有界会话上下文，适合从同一背景分头分析。
+- **Agent Team**：独立上下文的受控子任务，由主 Agent 汇总证据。
+- **Worktree / 代码副本**：经审批从管理员绑定仓库准备独立目录；Worktree 使用 detached 方式，不自动合并用户分支。
 
-历史真实PostgreSQL双实例与10/50/100并发、官方MCP SDK、本地HTTP服务和Docker隔离证据见验收记录；本轮新增父子锁竞争仅实测SQLite，不能引用旧PG结果替代。压测和协作模型为确定性替身，不能代表商业模型延迟或效果。Git普通推送仍受代理连接拒绝影响；官方公钥核验后的备用SSH通道也因现有密钥未获授权失败，远端同步尚未完成。
+当前仓库准备与子任务读取仍是独立能力；父子代码目录联动、任务依赖图及独立结果验收门正在升级，尚不能作为完整协作编码团队使用。管理员仓库配置、工具调用和操作步骤见 [使用手册](docs/使用手册.md)；新增设计见 [协作升级方案](docs/升级方案/13-协作代码任务与鲁棒性验收.md)。
 
-多Agent目前提供主控委派的只读协作；仓库副本/Worktree是独立的代码准备工具。尚未实现子任务依赖图、子Agent与父代码工作区联动及独立的子结果质量验收门，不能将Fork/Team命名等同于完整协作编码团队。具体缺口与补齐证据见[多Agent协作验收](docs/升级方案/12-多Agent协作补齐与验收.md)。
+## 项目亮点
 
-尚未实现在线RL/LoRA、自动安装/执行生成工具、企业共享技能发布、独立技能回放晋升与训练平台。真实模型、Prompt Cache收益、真实Milvus/重排质量、干净Windows安装及Linux沙箱Compose组合仍需专项验收。安全分类与反思可能出错，不能代替权限规则和人工审阅。
+- **受控任务闭环**：工具调用与持久任务结合，支持规划失败回退、默认 10 步预算、反思反馈和全链路 Trace ID。
+- **个人长期记忆与技能积累**：成功与失败轨迹提炼为偏好、约束、经验和 Skill 草稿；来源追溯、去重、版本修订和退役形成跨会话复用闭环。候选经审阅后生效，权限规则不参与自进化。
+- **分层上下文管理**：大工具结果外置保存，保留摘要与读取引用；近期窗口和结构化历史摘要控制长会话上下文。缓存与 Token 收益以实测为准。
+- **中心化多 Agent**：主控保留规划和审批权；子运行只读、有限预算、父权限子集，父停止后回收活跃子，长结果可按引用读取全文。
+- **权限与安全边界**：租户与用户隔离、角色控制、工具参数校验、模型风险信号和精确参数人工审批；代码只在配置的 Docker 沙箱执行。
+- **外部 MCP 与知识检索**：官方 MCP SDK 接入运维批准的服务；知识库使用 BM25，可选 Milvus 向量、RRF 融合和 Cross-Encoder 重排，依赖故障明确降级。
+- **恢复与模型容错**：幂等任务创建、Worker 租约、检查点、取消、SSE 游标重连；多模型路由与三态熔断，60 秒恢复探测窗口。
 
-原文案的Top-5提升15%、缓存小于50ms、Token降低40%缺少可复核记录，均为**未验证**，不作为本项目成果。外部论文结论同样不能作为本项目指标。
+自进化指推理时的记忆与技能积累，当前不会在线更新模型权重。上述机制不保证每次任务成功，未知副作用不会自动重放。
 
-开发回归：
+## 当前技术栈
 
-```bash
-pip install ".[dev]"
-python -m pytest tests -q
-```
+| 层次 | 技术 |
+|---|---|
+| 后端与执行内核 | Python 3.12、FastAPI、异步任务执行、原生工具调用 |
+| 存储 | SQLAlchemy async、SQLite（个人版）、PostgreSQL（企业版） |
+| 模型与外部工具 | OpenAI 兼容 API、MCP SDK、多模型路由与熔断 |
+| 可选知识检索 | Milvus、BM25、RRF、Cross-Encoder |
+| 工作台 | 同源 HTML / CSS / JavaScript、SSE |
+| 安装与隔离 | Docker Compose、Docker 执行沙箱、PyInstaller、Python wheel |
 
-后续路线见 [实施进度](docs/升级方案/03-实施任务与进度.md) 和 [Skill文件生态计划](docs/升级方案/07-Skill文件生态与迭代计划.md)。
+当前主链路采用自主 Harness；LangChain、LangGraph、Redis 不再是当前核心依赖。完整使用方法见 [用户手册](docs/使用手册.md)，安全部署见 [安装与运维](docs/升级方案/06-安装与运维.md)，能力验证与边界见 [验收记录](docs/升级方案/12-多Agent协作补齐与验收.md)。
 
-## 许可
+## 常见问题
 
-包元数据标记为 MIT；当前仓库缺少 LICENSE 正文，正式发布前需由维护者核对权属并补齐许可文件。
+- **注册提示 422**：检查账号非空、密码至少 8 字符；当前通用提示问题正在修复，不要关闭后端校验。
+- **没有模型或任务失败**：填写模型配置并重启，确认该模型支持工具调用和你的账号权限。
+- **无法执行代码**：配置并验证 Docker 沙箱；未配置时拒绝执行，不降级为宿主运行。
+- **看不到仓库工具或 MCP**：它们由运维配置与用户授权决定，不能通过普通对话添加任意宿主路径或服务地址。
+- **找不到 EXE 下载**：当前提供源码构建方式，公开安装包发布后会更新本页下载入口。
+
+API 文档位于 `/docs`，数据库就绪探针为 `/api/v1/health/ready`。业务 API 需要登录令牌，创建任务需要 `Idempotency-Key`。
+
+包元数据标记 MIT，仓库尚缺 LICENSE 正文；正式使用和分发前请核对权属及许可。
