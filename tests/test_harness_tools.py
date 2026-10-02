@@ -262,6 +262,16 @@ class DelegationService:
         self.fail_second, self.completed = fail_second, completed
         self.children, self.cancelled, self.created_arguments = {}, [], []
 
+    async def delegation_context(self, principal, run_id, task_count):
+        import time
+
+        return {
+            "remaining_steps": 8,
+            "allowed_tools": ["calculator", "knowledge_search", "artifact_read", "skill_read"],
+            "session_id": "parent-session",
+            "deadline": time.time() + 300,
+        }
+
     async def get_run(self, principal, run_id):
         if run_id == "parent":
             return {

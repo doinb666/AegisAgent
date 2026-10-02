@@ -215,7 +215,8 @@ class HarnessService(AssetService):
                             raise HarnessError(429, "每个父运行最多创建两个子运行")
                         parent_config = dict(parent.config)
                         delegated = parent_config.get("delegated_steps", 0)
-                        remaining = parent_config["max_steps"] - parent.step - delegated
+                        # 委派预留与父调用共享步数，最后一轮必须留给主控汇总。
+                        remaining = parent_config["max_steps"] - parent.step - delegated - 1
                         child_budget = max_steps or min(2, remaining)
                         if child_budget < 1 or child_budget > remaining:
                             raise HarnessError(409, "父运行剩余预算不足")
@@ -402,6 +403,51 @@ class HarnessService(AssetService):
     async def get_run(self, principal, run_id):
         async with self.store.sessions() as session:
             return run_dict(await self.store.owned(session, Run, run_id, principal))
+
+    async def delegation_context(self, principal, run_id, task_count):
+        """内核专用整批预检；公开运行响应不暴露权限或配置。"""
+        if not 1 <= task_count <= 2:
+            raise HarnessError(422, "委派任务数量须为一至两个")
+        async with self.store.transaction() as session:
+            parent = await self.store.owned(session, Run, run_id, principal)
+            if parent.parent_run_id:
+                raise HarnessError(403, "子运行不得递归委派")
+            if parent.status != "running":
+                raise HarnessError(409, "仅正在执行的父运行可创建子运行")
+            if self.settings.max_child_runs < 1:
+                raise HarnessError(409, "子运行工作池已关闭")
+            children = await session.scalar(
+                select(func.count())
+                .select_from(Run)
+                .where(*scope(Run, principal), Run.parent_run_id == run_id)
+            )
+            if children + task_count > 2:
+                raise HarnessError(429, "每个父运行最多创建两个子运行")
+            remaining = (
+                parent.config["max_steps"]
+                - parent.step
+                - parent.config.get("delegated_steps", 0)
+                - 1
+            )
+            if remaining < task_count:
+                raise HarnessError(409, "父运行预算不足，无法创建整批子运行并保留主控汇总")
+            active = await session.scalar(
+                select(func.count())
+                .select_from(Run)
+                .where(*scope(Run, principal), Run.status.in_(ACTIVE_STATUSES))
+            )
+            if active + task_count > self.settings.max_user_runs:
+                raise HarnessError(429, "活动运行用户限额不足，整批子运行未创建")
+            names = self.accessible_tool_names(principal)
+            allowed = parent.config.get("allowed_tools")
+            if allowed is not None:
+                names = [name for name in names if name in allowed]
+            return {
+                "remaining_steps": remaining,
+                "allowed_tools": names,
+                "session_id": parent.session_id,
+                "deadline": parent.created + self.settings.run_timeout_seconds,
+            }
 
     async def list_runs(self, principal, query=None, status=None, limit=100, before=None):
         return await self.inspection.list_runs(principal, query, status, limit, before)

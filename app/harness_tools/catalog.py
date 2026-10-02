@@ -1,12 +1,12 @@
 """工具目录与运行适配：权限由内核和工具双重核对。"""
 
-import asyncio
 import re
 from copy import deepcopy
 
 from jsonschema import validate
 
 from app.core.tools.builtin.calculator import CalculatorTool
+from app.harness_tools import delegation
 from app.harness_tools.mcp import MCPGateway
 from app.harness_tools.project import ProjectManager
 from app.harness_tools.sandbox import SandboxClient, bounded
@@ -166,51 +166,9 @@ class HarnessTools:
             self.mcp.authorize(arguments["server"], principal)
             return await bounded(self.mcp.call(**arguments))
         if name == "delegate":
-            return await self._delegate(principal, run_id, arguments)
+            return await delegation.delegate(
+                self.service, self.settings, principal, run_id, arguments
+            )
         if name == "project_prepare":
             return await self.projects.prepare(principal, run_id, arguments["mode"])
         raise ValueError("未知工具")
-
-    async def _delegate(self, principal, run_id, arguments):
-        parent = await self.service.get_run(principal, run_id)
-        if parent.get("parent_run_id"):
-            raise PermissionError("子 Agent 不允许递归委派")
-        child_tools = ["calculator", "knowledge_search", "artifact_read", "skill_read"]
-        children = []
-
-        async def collect(child_id):
-            for _ in range(200):
-                parent_status = await self.service.get_run(principal, run_id)
-                if parent_status["status"] in {"cancelled", "interrupted"}:
-                    await self.service.cancel(principal, child_id)
-                    return {"run_id": child_id, "status": "cancelled"}
-                child = await self.service.get_run(principal, child_id)
-                if child["status"] in {"completed", "failed", "cancelled", "interrupted"}:
-                    return {
-                        "run_id": child_id,
-                        "status": child["status"],
-                        "answer": (child.get("answer") or "")[:2000],
-                        "error": child.get("error"),
-                    }
-                await asyncio.sleep(0.1)
-            return {"run_id": child_id, "status": "queued", "message": "子任务继续运行，请按ID查询"}
-
-        try:
-            for index, message in enumerate(arguments["tasks"]):
-                child = await self.service.create_run(
-                    principal,
-                    message,
-                    f"{run_id}:child:{index}",
-                    parent_run_id=run_id,
-                    allowed_tools=child_tools,
-                    max_steps=min(3, self.settings.max_steps),
-                    session_id=parent["session_id"] if arguments.get("mode") == "fork" else None,
-                )
-                children.append(child["id"])
-            return await asyncio.gather(*(collect(cid) for cid in children))
-        finally:
-            # 汇总超时或父执行被取消后，不留下继续运行的子任务。
-            for child_id in children:
-                child = await self.service.get_run(principal, child_id)
-                if child["status"] in {"queued", "running", "waiting_approval"}:
-                    await self.service.cancel(principal, child_id)
