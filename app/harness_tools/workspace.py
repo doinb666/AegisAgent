@@ -25,15 +25,21 @@ class Workspace:
             & getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 1024)
         )
 
+    @classmethod
+    def _check_directory(cls, directory: Path) -> bool:
+        try:
+            info = directory.lstat()
+        except FileNotFoundError:
+            return False
+        if cls._linked(info) or not stat.S_ISDIR(info.st_mode):
+            raise ValueError("工作区路径不安全")
+        return True
+
     def _read_only_directory(self, principal, run_id: str) -> Path | None:
         root = self.root / workspace_key(principal, run_id)
         for directory in (self.root, root):
-            try:
-                info = directory.lstat()
-            except FileNotFoundError:
+            if not self._check_directory(directory):
                 return None
-            if self._linked(info) or not stat.S_ISDIR(info.st_mode):
-                raise ValueError("工作区路径不安全")
         return root
 
     @staticmethod
@@ -43,11 +49,29 @@ class Workspace:
         parts = path.split("/")
         if any(
             part.casefold() in {"", ".", "..", ".git"}
-            or part.endswith((".", " ")) or PureWindowsPath(part).is_reserved()
+            or part.endswith((".", " "))
+            or PureWindowsPath(part).is_reserved()
             for part in parts
         ):
             raise ValueError("文件路径越界或无效")
         return parts
+
+    @classmethod
+    def _checked_path(cls, root: Path, parts: list[str]) -> Path:
+        if not cls._check_directory(root):
+            raise FileNotFoundError("工作区不存在")
+        target = root
+        for index, part in enumerate(parts):
+            target /= part
+            try:
+                info = target.lstat()
+            except FileNotFoundError:
+                continue
+            if cls._linked(info):
+                raise ValueError("禁止访问链接文件")
+            if index < len(parts) - 1 and not stat.S_ISDIR(info.st_mode):
+                raise ValueError("文件路径包含非目录项")
+        return target
 
     async def list_files(self, principal, run_id: str) -> dict:
         return await asyncio.to_thread(self._list_files, principal, run_id)
@@ -129,22 +153,16 @@ class Workspace:
 
     def directory(self, principal, run_id: str) -> Path:
         path = self.root / workspace_key(principal, run_id)
-        path.mkdir(parents=True, exist_ok=True)
-        if path.is_symlink() or not path.resolve().is_relative_to(self.root):
-            raise ValueError("工作区路径不安全")
+        for directory in (self.root, path):
+            if not self._check_directory(directory):
+                directory.mkdir(parents=True, exist_ok=True)
+                self._check_directory(directory)
         return path
 
     def resolve(self, principal, run_id: str, relative_path: str) -> Path:
-        if not relative_path or len(relative_path) > 512:
-            raise ValueError("文件路径为空或过长")
+        parts = self._path_parts(relative_path)
         root = self.directory(principal, run_id)
-        relative = Path(relative_path)
-        if relative.is_absolute() or any(p.casefold() in {"..", ".git"} for p in relative.parts):
-            raise ValueError("文件路径越界")
-        result = (root / relative).resolve()
-        if not result.is_relative_to(root) or result == root:
-            raise ValueError("文件路径越界")
-        return result
+        return self._checked_path(root, parts)
 
     async def read(self, principal, run_id: str, path: str) -> str:
         target = self.resolve(principal, run_id, path)

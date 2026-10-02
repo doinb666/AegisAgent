@@ -3,8 +3,11 @@
 import asyncio
 import io
 import os
+import stat
 import zipfile
 from pathlib import Path
+
+from app.harness_tools.workspace import Workspace
 
 
 class ProjectManager:
@@ -37,19 +40,19 @@ class ProjectManager:
     @staticmethod
     def _extract(data: bytes, destination: Path):
         with zipfile.ZipFile(io.BytesIO(data)) as archive:
-            if sum(item.file_size for item in archive.infolist()) > 30_000_000:
+            items = archive.infolist()
+            if sum(item.file_size for item in items) > 30_000_000:
                 raise ValueError("仓库归档超过工作区配额")
-            for item in archive.infolist():
-                parts = Path(item.filename).parts
-                target = (destination / item.filename).resolve()
-                if any(
-                    part.casefold() in {".git", ".."} for part in parts
-                ) or not target.is_relative_to(destination):
-                    raise ValueError("仓库归档路径不安全")
+            for item in items:
+                path = item.orig_filename
+                if item.is_dir():
+                    path = path.removesuffix("/")
+                parts = Workspace._path_parts(path)
+                target = Workspace._checked_path(destination, parts)
+                if stat.S_ISLNK(item.external_attr >> 16):
+                    continue
                 if item.is_dir():
                     target.mkdir(parents=True, exist_ok=True)
-                elif (item.external_attr >> 16) & 0o170000 == 0o120000:
-                    continue
                 else:
                     target.parent.mkdir(parents=True, exist_ok=True)
                     target.write_bytes(archive.read(item))
