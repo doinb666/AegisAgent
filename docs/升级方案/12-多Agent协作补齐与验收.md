@@ -48,17 +48,17 @@ Sequential Thinking、DuckDuckGo、Context7、Serena未加载，不冒称MCP调�
 - [x] 红测：初始74项中62项失败；追加ZIP原始反斜杠、NUL与链接目录项3项失败。覆盖真实Windows别名、ADS、设备名、静态junction；普通中文路径保留。
 - [x] 最小实现：工具和归档共用片段规则，目录ZIP项处理合法尾斜线；检查中间及工作区目录静态链接，拒绝重解析点，检查ZIP原始名称。不宣称防不可信宿主TOCTOU。
 - [x] 专项：root复跑新增测试、workspace inspection、工具与真实临时Git Fork/Worktree：114通过、1项旧Windows符号链接权限跳过（22.99秒）。独立规格91项通过、独立质量79项通过；Ruff与差异检查通过。
-- [ ] 提交并普通推送，记录远端核对或具体阻塞。
+- [x] 本地提交`01cd6b0`；普通推送已尝试，Git代理`127.0.0.1:7897`连接拒绝，远端未同步。未强推。
 
 ## M2：父子恢复生命周期
 
 - 文件：`app/harness/store.py`、必要的`runtime.py`及新增恢复测试；不变schema。
 - 输入：过期父租约、started delegate、queued/running子；输出：父interrupted，子不得成为孤儿执行。
 - 已复现：`claim(child_only=True)`将父恢复为interrupted后仍把其子领取为running。
-- [ ] 红测：父终态/过期started、活跃子、完成子、其他owner隔离及双Store竞争。
-- [ ] 最小实现：同事务清理终态父活跃子；领取时核对并锁住同作用域父状态，保留started工具未知结果的interrupted语义；运行子在父失效后有界停止。
-- [ ] 专项与独立两阶段审查；已有正常并发池、取消和完成检查点复用不回归。
-- [ ] 提交并普通推送；PostgreSQL多副本未实测时明确单列。
+- [x] 红测：新增36项，初始35失败、1通过，覆盖父终态/过期started、活跃子、完成子、其他owner隔离及双Store竞争。
+- [x] 最小实现：同事务清理终态父活跃子；领取时核对并锁住同作用域有效父租约，保留started工具未知结果的interrupted语义；heartbeat、加载、检查点与工具执行前核对父状态。SQLite读候选前获取写锁，候选数据库预过滤且有界读取。
+- [x] 专项与独立两阶段审查：root64通过（49.57秒）、规格64通过、质量36专项与4旧回归通过；检查点失效停子提交、清理异常整事务回滚另行实测。Ruff和差异检查通过。
+- [ ] 提交并普通推送；本轮PostgreSQL多副本锁竞争未实测，不能以SQLite结果替代。已启动外部工具仅协作取消，无法撤回已发生的副作用。
 
 ## M3：委派预算、等待及结果
 

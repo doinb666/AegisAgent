@@ -4,6 +4,7 @@ import asyncio
 import json
 import logging
 import time
+from contextlib import asynccontextmanager
 
 from sqlalchemy import select, update
 
@@ -11,7 +12,7 @@ from .context import bounded_messages
 from .errors import HarnessError, Principal
 from .models import Asset, Run, ToolCall, User
 from .security import canonical, digest
-from .store import scope, uid
+from .store import TERMINAL_STATUSES, scope, uid
 
 logger = logging.getLogger(__name__)
 
@@ -77,34 +78,41 @@ class Worker:
         while True:
             await asyncio.sleep(self.service.settings.lease_seconds / 3)
             try:
-                async with self.store.sessions.begin() as session:
-                    result = await session.execute(
-                        update(Run)
-                        .where(
-                            Run.id == run_id, Run.lease_owner == self.id, Run.status == "running"
+                async with self.store.transaction() as session:
+                    run = await self.store.running(session, run_id, self.id)
+                    alive = run is not None
+                    if alive:
+                        await session.execute(
+                            update(Run)
+                            .where(Run.id == run_id)
+                            .values(lease_until=time.time() + self.service.settings.lease_seconds)
                         )
-                        .values(lease_until=time.time() + self.service.settings.lease_seconds)
-                    )
             except Exception as exc:
                 logger.warning("租约心跳失败，停止当前执行：%s", type(exc).__name__)
                 if self.execution:
                     self.execution.cancel()
                 return
-            if not result.rowcount:
+            if not alive:
                 if self.execution:
                     self.execution.cancel()
                 return
 
+    @asynccontextmanager
+    async def active_transaction(self, run_id):
+        """父子失效终态先提交，再取消当前执行，避免异常回滚恢复结果。"""
+        async with self.store.transaction() as session:
+            run = await self.store.running(session, run_id, self.id)
+            if run is not None:
+                yield session, run
+                return
+        raise asyncio.CancelledError()
+
     async def load(self, run_id):
-        async with self.store.sessions() as session:
-            run = await session.get(Run, run_id)
-            if run is None or run.status != "running" or run.lease_owner != self.id:
-                raise asyncio.CancelledError()
+        async with self.active_transaction(run_id) as (_, run):
             return run
 
     async def checkpoint(self, run_id, messages, step, event_type, data, config=None):
-        async with self.store.write_lock, self.store.sessions.begin() as session:
-            run = await session.get(Run, run_id)
+        async with self.active_transaction(run_id) as (session, run):
             values = {"messages": messages, "step": step}
             if config is not None:
                 values["config"] = config
@@ -118,8 +126,8 @@ class Worker:
             self.store.emit(session, run, event_type, data)
 
     async def finish(self, run_id, status, answer=None, error=None):
-        async with self.store.write_lock, self.store.sessions.begin() as session:
-            run = await session.get(Run, run_id)
+        async with self.store.transaction() as session:
+            run = await self.store.running(session, run_id, self.id)
             if run is None:
                 return
             updated = await session.execute(
@@ -132,6 +140,8 @@ class Worker:
             if not updated.rowcount:
                 return
             self.store.emit(session, run, status, {"answer": answer, "error": error})
+            if status in TERMINAL_STATUSES:
+                await self.store.stop_children(session, run)
             await self.consolidate(run_id, session)
 
     async def consolidate(self, run_id, session=None):
@@ -245,14 +255,7 @@ class Worker:
         except TimeoutError:
             # 对已经启动的工具，超时不能把结果当成可安全重跑。
             async with self.store.sessions() as session:
-                unknown = await session.scalar(
-                    select(ToolCall.id).where(
-                        ToolCall.run_id == run_id,
-                        ToolCall.tenant_id == run.tenant_id,
-                        ToolCall.owner_id == run.owner_id,
-                        ToolCall.status == "started",
-                    )
-                )
+                unknown = await self.store.unknown_tool(session, run)
             await self.finish(
                 run_id, "interrupted" if unknown else "failed", error="运行时间预算耗尽"
             )
@@ -418,8 +421,7 @@ class Worker:
                 step = await self.review_risk(
                     current_run, name, arguments, arg_hash, messages, step
                 )
-        async with self.store.write_lock, self.store.sessions.begin() as session:
-            current = await self.store.owned(session, Run, run.id, principal)
+        async with self.active_transaction(run.id) as (session, current):
             # 先以条件写入锁住运行行，取消与租约变更不能穿过执行前检查。
             locked = await session.execute(
                 update(Run)
@@ -446,6 +448,7 @@ class Worker:
                 current.status, current.error = "interrupted", "工具结果未知，禁止重放"
                 current.lease_owner, current.lease_until = None, None
                 self.store.emit(session, current, "interrupted", {"reason": current.error})
+                await self.store.stop_children(session, current)
                 return None
             if tool and tool.status == "done":
                 result = tool.result

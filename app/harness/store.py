@@ -5,11 +5,15 @@ import time
 from contextlib import asynccontextmanager
 from uuid import uuid4
 
-from sqlalchemy import event, select, update
+from sqlalchemy import event, select, text, update
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+from sqlalchemy.orm import aliased
 
 from .errors import HarnessError
 from .models import Base, Event, Run, ToolCall
+
+ACTIVE_STATUSES = ("queued", "running", "waiting_approval")
+TERMINAL_STATUSES = ("completed", "failed", "cancelled", "interrupted")
 
 
 def uid() -> str:
@@ -69,6 +73,9 @@ class Store:
             yield existing
             return
         async with self.write_lock, self.sessions.begin() as session:
+            if self.engine.dialect.name == "sqlite":
+                # 跨 Store 在读候选之前取得写锁，避免延迟事务的读写升级竞争。
+                await session.execute(text("BEGIN IMMEDIATE"))
             yield session
 
     async def owned(self, session, model, identifier, principal):
@@ -90,24 +97,117 @@ class Store:
             )
         )
 
+    async def unknown_tool(self, session, run):
+        return await session.scalar(
+            select(ToolCall.id).where(
+                ToolCall.run_id == run.id,
+                ToolCall.tenant_id == run.tenant_id,
+                ToolCall.owner_id == run.owner_id,
+                ToolCall.status == "started",
+            )
+        )
+
+    async def stop_child(self, session, run):
+        """父行已锁定时停止活跃子运行，保留尚未确认的工具执行。"""
+        locked = await session.execute(
+            update(Run)
+            .where(
+                Run.id == run.id,
+                Run.tenant_id == run.tenant_id,
+                Run.owner_id == run.owner_id,
+                Run.status.in_(ACTIVE_STATUSES),
+            )
+            .values(status=Run.status)
+        )
+        if not locked.rowcount:
+            return
+        unknown = await self.unknown_tool(session, run)
+        status = "interrupted" if unknown else "cancelled"
+        reason = "父运行失效，子工具结果未知，禁止自动重放" if unknown else "父运行失效，停止子运行"
+        await session.execute(
+            update(Run)
+            .where(Run.id == run.id)
+            .values(status=status, error=reason, lease_owner=None, lease_until=None)
+        )
+        self.emit(session, run, status, {"parent_run_id": run.parent_run_id, "reason": reason})
+
+    async def stop_children(self, session, parent):
+        children = (
+            await session.scalars(
+                select(Run).where(
+                    Run.parent_run_id == parent.id,
+                    Run.tenant_id == parent.tenant_id,
+                    Run.owner_id == parent.owner_id,
+                    Run.status.in_(ACTIVE_STATUSES),
+                ).order_by(Run.id)
+            )
+        ).all()
+        for child in children:
+            await self.stop_child(session, child)
+
+    async def parent_active(self, session, run, stop_invalid=False):
+        """先锁同私有范围父行，再判断租约；与父终态更新按行互斥。"""
+        if run.parent_run_id is None:
+            return True
+        locked = await session.execute(
+            update(Run)
+            .where(
+                Run.id == run.parent_run_id,
+                Run.tenant_id == run.tenant_id,
+                Run.owner_id == run.owner_id,
+            )
+            .values(status=Run.status)
+        )
+        if not locked.rowcount:
+            return False
+        parent = await session.get(Run, run.parent_run_id, populate_existing=True)
+        active = (
+            parent.status == "running"
+            and parent.lease_owner is not None
+            and parent.lease_until is not None
+            and parent.lease_until > time.time()
+        )
+        if not active and stop_invalid:
+            await self.stop_child(session, run)
+        return active
+
+    async def running(self, session, run_id, worker_id):
+        """执行边界统一验证父子；失效子终态在事务提交后由调用方停止执行。"""
+        run = await session.get(Run, run_id)
+        if run is None or not await self.parent_active(session, run, stop_invalid=True):
+            return None
+        locked = await session.execute(
+            update(Run)
+            .where(Run.id == run_id, Run.status == "running", Run.lease_owner == worker_id)
+            .values(status=Run.status)
+        )
+        if not locked.rowcount:
+            return None
+        await session.refresh(run)
+        return run
+
     async def claim(self, worker_id, child_only=False):
-        """候选读取后条件更新；跨进程也只有一个胜者。"""
-        async with self.write_lock, self.sessions.begin() as session:
+        """先恢复父子生命周期，再在父有效租约内条件领取候选。"""
+        async with self.transaction() as session:
             now = time.time()
             stale = (
                 await session.scalars(
-                    select(Run).where(Run.status == "running", Run.lease_until < now)
+                    select(Run)
+                    .where(Run.status == "running", Run.lease_until < now)
+                    .order_by(Run.parent_run_id.nullsfirst(), Run.id)
                 )
             ).all()
             for run in stale:
-                unknown = await session.scalar(
-                    select(ToolCall.id).where(
-                        ToolCall.run_id == run.id,
-                        ToolCall.tenant_id == run.tenant_id,
-                        ToolCall.owner_id == run.owner_id,
-                        ToolCall.status == "started",
-                    )
+                if not await self.parent_active(session, run, stop_invalid=True):
+                    continue
+                locked = await session.execute(
+                    update(Run)
+                    .where(Run.id == run.id, Run.status == "running", Run.lease_until < now)
+                    .values(status=Run.status)
                 )
+                if not locked.rowcount:
+                    continue
+                unknown = await self.unknown_tool(session, run)
                 recovered_status = "interrupted" if unknown else "queued"
                 recovered = await session.execute(
                     update(Run)
@@ -121,28 +221,71 @@ class Store:
                 )
                 if recovered.rowcount and unknown:
                     self.emit(session, run, "interrupted", {"reason": "工具结果未知"})
-            run_kind = Run.parent_run_id.is_not(None) if child_only else Run.parent_run_id.is_(None)
-            candidate = await session.scalar(
-                select(Run.id)
-                .where(Run.status == "queued", run_kind)
-                .order_by(Run.created)
-                .limit(1)
-            )
-            if candidate is None:
-                return None
-            result = await session.execute(
-                update(Run)
-                .where(Run.id == candidate, Run.status == "queued")
-                .values(
-                    status="running",
-                    lease_owner=worker_id,
-                    lease_until=now + self.settings.lease_seconds,
+                    await self.stop_children(session, run)
+
+            child = aliased(Run)
+            parents = (
+                await session.scalars(
+                    select(Run)
+                    .join(child, (
+                        (child.parent_run_id == Run.id)
+                        & (child.tenant_id == Run.tenant_id)
+                        & (child.owner_id == Run.owner_id)
+                        & child.status.in_(ACTIVE_STATUSES)
+                    ))
+                    .where(Run.status.in_(TERMINAL_STATUSES))
+                    .distinct()
+                    .order_by(Run.id)
                 )
-            )
-            if result.rowcount:
-                run = await session.get(Run, candidate)
-                self.emit(session, run, "running", {"claimed_at": now, "trace_id": run.trace_id})
-            return candidate if result.rowcount else None
+            ).all()
+            for parent in parents:
+                locked = await session.execute(
+                    update(Run)
+                    .where(Run.id == parent.id, Run.status.in_(TERMINAL_STATUSES))
+                    .values(status=Run.status)
+                )
+                if locked.rowcount:
+                    await self.stop_children(session, parent)
+            run_kind = Run.parent_run_id.is_not(None) if child_only else Run.parent_run_id.is_(None)
+            eligible = select(Run).where(Run.status == "queued", run_kind)
+            if child_only:
+                parent = aliased(Run)
+                eligible = eligible.where(
+                    select(parent.id).where(
+                        parent.id == Run.parent_run_id,
+                        parent.tenant_id == Run.tenant_id,
+                        parent.owner_id == Run.owner_id,
+                        parent.status == "running",
+                        parent.lease_owner.is_not(None),
+                        parent.lease_until > time.time(),
+                    ).exists()
+                )
+            candidates = (
+                await session.scalars(
+                    eligible.order_by(Run.created, Run.id).limit(32 if child_only else 1)
+                )
+            ).all()
+            for run in candidates:
+                if not await self.parent_active(session, run):
+                    continue
+                claimed_at = time.time()
+                result = await session.execute(
+                    update(Run)
+                    .where(Run.id == run.id, Run.status == "queued")
+                    .values(
+                        status="running", lease_owner=worker_id,
+                        lease_until=claimed_at + self.settings.lease_seconds,
+                    )
+                )
+                if result.rowcount:
+                    self.emit(
+                        session,
+                        run,
+                        "running",
+                        {"claimed_at": claimed_at, "trace_id": run.trace_id},
+                    )
+                    return run.id
+            return None
 
     async def close(self):
         await self.engine.dispose()
