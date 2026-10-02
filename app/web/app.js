@@ -1,6 +1,7 @@
 "use strict";
 const $ = (id) => document.getElementById(id);
 const apiRoot = "/api/v1";
+const welcomeTemplate = $("welcome").cloneNode(true);
 const state = {token: sessionStorage.getItem("aegis-token"), user: null, run: null, session: null,
   view: "chat", cursor: 0, stream: null, assets: [], editingAsset: null, generation: 0, pendingRequest: null,
   viewGeneration: 0, assetsGeneration: 0, runsGeneration: 0, overviewGeneration: 0, runs: [], runsLoading: false, runLoading: false, hasMore: false};
@@ -28,11 +29,13 @@ async function api(path, options={}) {
   if (requestToken) headers.set("Authorization", `Bearer ${requestToken}`);
   if (options.body && !(options.body instanceof FormData)) headers.set("Content-Type", "application/json");
   const response = await fetch(apiRoot + path, {...options, headers});
-  const data = await response.json();
+  let data;
+  try { data = await response.json(); }
+  catch { if(response.ok) throw new Error("服务返回了无法读取的数据，请刷新后重试。"); }
   if(requestToken!==state.token) throw new Error("账号已切换，请在当前空间重新操作。");
   if (!response.ok) {
     if (response.status === 401 && state.user) resetLogin();
-    throw new Error(typeof data.detail === "string" ? data.detail : `请求失败 (${response.status})`);
+    throw new Error(WorkspaceUI.requestError(data, response.status));
   }
   return data;
 }
@@ -92,11 +95,19 @@ $("auth-form").addEventListener("submit", async event=>{
   finally { $("login").disabled=false; }
 });
 $("register").addEventListener("click", async()=>{
-  $("auth-error").textContent=""; $("register").disabled=true;
+  $("auth-error").textContent="";
+  const password=$("password");
+  password.setCustomValidity(password.value.length>0 && password.value.length<8 ? "密码至少需要 8 个字符。" : "");
+  if(!$("auth-form").reportValidity()) {
+    $("auth-error").textContent="请检查账号和密码，密码至少需要 8 个字符。";
+    return;
+  }
+  $("register").disabled=true;
   try { await api("/auth/register", {method:"POST",body:JSON.stringify({username:$("username").value,password:$("password").value})}); $("auth-error").textContent="账号已创建，可以登录。"; }
   catch(error) { $("auth-error").textContent=error.message; }
   finally { $("register").disabled=false; }
 });
+$("password").addEventListener("input",()=>$("password").setCustomValidity(""));
 $("logout").onclick=()=>guard(async()=>{ await api("/auth/logout",{method:"POST"}); resetLogin(); });
 async function refreshOverview() {
   const token=state.token, generation=++state.overviewGeneration;
@@ -149,6 +160,7 @@ function renderRun(run) {
   $("cancel").hidden=!canWrite() || !['queued','running','waiting_approval'].includes(run.status);
   $("feedback").hidden=!canWrite() || !['completed','failed'].includes(run.status);
   $("approval").hidden=run.status!=="waiting_approval";
+  if(run.status==="waiting_approval") WorkspaceUI.setInspector(true);
   if(run.approval) $("approval-data").textContent=JSON.stringify({工具:run.approval.name,参数:run.approval.arguments},null,2);
   $("approve").hidden=!canWrite();$("reject").hidden=!canWrite();
   const previous=$("answer"); previous?.remove();
@@ -221,7 +233,8 @@ function newTask() {
   state.generation++; state.stream?.abort(); state.run=null; state.session=null; state.cursor=0;
   setRunLoading(false);
   WorkspaceUI.clearFiles();sessionStorage.removeItem("aegis-last-run");$("message").value="";$("approval-data").textContent="";
-  $("conversation").replaceChildren(); message("assistant","描述你的新目标。可以先选择项目、上传资料，或设置长期约束。");
+  $("conversation").replaceChildren(welcomeTemplate.cloneNode(true));
+  WorkspaceUI.setInspector(false);
   $("timeline").replaceChildren(); $("run-status").textContent="尚未开始任务";$("run-status").removeAttribute("data-status"); $("run-meta").textContent="";$("connection").textContent="尚未连接任务";
   for(const id of ['approval','cancel','feedback']) $(id).hidden=true;
   showView("chat"); $("message").focus();
@@ -241,7 +254,10 @@ function loadRunFiles() {
   return WorkspaceUI.loadFiles(id,api,()=>runCurrent(id,generation,token));
 }
 $("files-refresh").onclick=()=>{if(state.run)loadRunFiles();else WorkspaceUI.clearFiles();};
-document.querySelectorAll("[data-prompt]").forEach(button=>button.onclick=()=>{$("message").value=button.dataset.prompt;$("message").focus();});
+$("conversation").addEventListener("click",event=>{
+  const button=event.target.closest("[data-prompt]");
+  if(button) { $("message").value=button.dataset.prompt;$("message").focus(); }
+});
 $("composer").addEventListener("submit", event=>{
   event.preventDefault();if(state.runLoading)return;
   guard(async()=>{

@@ -22,7 +22,7 @@ window.WorkspaceUI = (() => {
   }
   let savedTheme;
   try { savedTheme = localStorage.getItem(themeKey); } catch { savedTheme = null; }
-  setTheme(savedTheme === "light" ? "light" : "dark");
+  setTheme(savedTheme === "dark" ? "dark" : "light");
   byId("theme-toggle").onclick = () => setTheme(document.documentElement.dataset.theme === "dark" ? "light" : "dark");
 
   function setInspector(expanded) {
@@ -32,6 +32,27 @@ window.WorkspaceUI = (() => {
     byId("inspector-toggle").setAttribute("aria-label", expanded ? "折叠审查区" : "展开审查区");
   }
   byId("inspector-toggle").onclick = () => setInspector(byId("inspector").hidden);
+  setInspector(false);
+
+  function requestError(data, status) {
+    if(typeof data?.detail === "string") return data.detail.slice(0,2000);
+    if(Array.isArray(data?.detail)) {
+      const fields={username:"账号",password:"密码",message:"任务内容",name:"名称",content:"内容",model:"模型",mode:"执行方式",session_id:"会话",directory:"技能目录",document:"技能文件",expected_version:"版本",query:"搜索内容"};
+      const messages=data.detail.filter(error=>error && typeof error==="object").slice(0,4).map(error=>{
+        const location=Array.isArray(error.loc) ? error.loc.at(-1) : null;
+        const field=typeof location==="string" && Object.hasOwn(fields,location) ? fields[location] : "提交字段";
+        const limit=error.ctx?.min_length ?? error.ctx?.max_length;
+        const bounded=typeof limit==="number" && Number.isFinite(limit) && limit>=0 && limit<=1000000;
+        if(error.type==="missing") return `${field}不能为空`;
+        if(error.type==="string_too_short") return bounded ? `${field}至少需要 ${limit} 个字符` : `${field}过短`;
+        if(error.type==="string_too_long") return bounded ? `${field}最多允许 ${limit} 个字符` : `${field}过长`;
+        if(error.type==="literal_error") return `${field}选项无效，请重新选择`;
+        return `${field}格式不正确，请检查后重试`;
+      });
+      if(messages.length) return messages.join("；")+"。";
+    }
+    return `请求失败 (${status})，请稍后重试；若持续失败，请检查服务状态。`;
+  }
 
   function renderCapabilities(cap) {
     const models = cap.models || [], tools = cap.tools || [];
@@ -106,5 +127,5 @@ window.WorkspaceUI = (() => {
     details.append(node("summary", "查看完整事件证据"), evidence); row.append(details);
     return row;
   }
-  return Object.freeze({node, setInspector, renderCapabilities, renderOverview, clearFiles, loadFiles, eventRow});
+  return Object.freeze({node, setInspector, requestError, renderCapabilities, renderOverview, clearFiles, loadFiles, eventRow});
 })();

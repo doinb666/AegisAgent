@@ -6,7 +6,7 @@ AegisCode 面向个人开发者和企业成员：描述目标，由 Agent 规划
 
 [安装与启动](#安装与启动) · [模型配置](#模型配置) · [使用方式](#使用方式) · [项目亮点](#项目亮点) · [使用手册](docs/使用手册.md)
 
-![AegisCode 工作台](docs/升级方案/截图/0.2.2/00-深色桌面工作台.png)
+![AegisCode 工作台](docs/升级方案/截图/0.2.3/00-浅色空工作台.png)
 
 ## 安装与启动
 
@@ -77,7 +77,7 @@ wheel 构建与安装：
 python -m pip install ".[dev]"
 python scripts/build_wheel.py
 # 安装 dist 中实际生成的 aegiscode-版本号-py3-none-any.whl
-python -m pip install dist/aegiscode-0.2.2-py3-none-any.whl
+python -m pip install dist/aegiscode-0.2.3-py3-none-any.whl
 aegiscode
 ```
 
@@ -171,7 +171,7 @@ Skill 快速体验：[下载示例 SKILL.md](docs/examples/skills/review-python/
 
 ## 常见问题
 
-- **注册提示 422**：检查账号非空、密码至少 8 字符；当前通用提示问题正在修复，不要关闭后端校验。
+- **注册提示字段错误**：账号不能为空，密码至少 8 字符。界面会先校验并显示具体原因；浏览器缓存旧界面时请强制刷新。
 - **没有模型或任务失败**：填写模型配置并重启，确认该模型支持工具调用和你的账号权限。
 - **无法执行代码**：配置并验证 Docker 沙箱；未配置时拒绝执行，不降级为宿主运行。
 - **看不到仓库工具或 MCP**：它们由运维配置与用户授权决定，不能通过普通对话添加任意宿主路径或服务地址。

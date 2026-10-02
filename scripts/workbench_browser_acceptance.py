@@ -12,7 +12,7 @@ from playwright.sync_api import expect, sync_playwright
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--url", default="http://127.0.0.1:8772")
-    parser.add_argument("--output", type=Path, default=Path("docs/升级方案/截图/0.2.2"))
+    parser.add_argument("--output", type=Path, default=Path("docs/升级方案/截图/0.2.3"))
     arguments = parser.parse_args()
     if urlparse(arguments.url).hostname not in {"127.0.0.1", "localhost", "::1"}:
         parser.error("仅允许本机测试服务")
@@ -37,12 +37,12 @@ def main():
         page.goto(arguments.url)
         page.wait_for_load_state("networkidle")
         expect(page.locator("#theme-toggle")).to_be_visible()
-        assert page.locator("html").get_attribute("data-theme") == "dark"
-        page.locator("#theme-toggle").click()
         assert page.locator("html").get_attribute("data-theme") == "light"
+        page.locator("#theme-toggle").click()
+        assert page.locator("html").get_attribute("data-theme") == "dark"
         page.reload()
         page.wait_for_load_state("networkidle")
-        assert page.locator("html").get_attribute("data-theme") == "light"
+        assert page.locator("html").get_attribute("data-theme") == "dark"
         page.locator("#theme-toggle").click()
         page.locator("#username").fill("workbench-" + str(time.time_ns()))
         page.locator("#password").fill("workbench-test-password")
@@ -51,6 +51,8 @@ def main():
         page.locator("#login").click()
         expect(page.locator("#shell")).to_be_visible()
         expect(page.locator("#workspace-overview")).to_contain_text("任务")
+        expect(page.locator("#inspector")).to_be_hidden()
+        page.screenshot(path=str(arguments.output / "00-浅色空工作台.png"), full_page=True)
         page.locator("#message").fill("写文件并核对预览")
         page.locator("#send").click()
         expect(page.locator("#approval")).to_be_visible(timeout=20000)
@@ -60,9 +62,9 @@ def main():
         expect(page.locator("#file-list")).to_contain_text("result.txt")
         page.locator("#file-list").get_by_role("button", name="result.txt", exact=False).click()
         expect(page.locator("#file-preview")).to_contain_text("已批准")
-        page.screenshot(path=str(arguments.output / "01-深色线程与文件.png"), full_page=True)
+        page.screenshot(path=str(arguments.output / "01-浅色线程与文件.png"), full_page=True)
         page.locator("#inspector").evaluate("element => element.scrollTop = 0")
-        page.screenshot(path=str(arguments.output / "00-深色桌面工作台.png"), full_page=True)
+        page.screenshot(path=str(arguments.output / "00-浅色桌面工作台.png"), full_page=True)
         page.locator("#inspector-toggle").click()
         expect(page.locator("#inspector")).to_be_hidden()
         page.locator("#inspector-toggle").click()
@@ -227,7 +229,7 @@ def main():
             "() => getComputedStyle(document.querySelector('#new-task')).color "
             "=== getComputedStyle(document.body).color"
         )
-        page.screenshot(path=str(arguments.output / "03-浅色设置.png"), full_page=True)
+        page.screenshot(path=str(arguments.output / "03-深色设置.png"), full_page=True)
         for width, height in [(390, 844), (768, 1024), (1440, 1000)]:
             page.set_viewport_size({"width": width, "height": height})
             assert page.evaluate("document.documentElement.scrollWidth <= innerWidth"), width

@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="zh-CN" data-theme="dark">
+<html lang="zh-CN" data-theme="light">
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
   <title>AegisCode · 你的任务工作台</title>
@@ -28,7 +28,8 @@
       <div class="intro-note">你的记忆和能力仅属于你的账号。每一次操作都可以追溯。</div></div>
     <form id="auth-form" class="auth-form"><span class="eyebrow">进入工作空间</span><h2>欢迎回来</h2>
       <label for="username">账号</label><input id="username" autocomplete="username" required maxlength="128">
-      <label for="password">密码</label><input id="password" type="password" autocomplete="current-password" required minlength="8" maxlength="1024">
+      <label for="password">密码</label><input id="password" type="password" autocomplete="current-password" required minlength="8" maxlength="1024" aria-describedby="password-hint auth-error">
+      <p id="password-hint" class="muted">至少 8 个字符，支持密码管理器与粘贴。</p>
       <p id="auth-error" class="error" role="alert"></p><button id="login" type="submit" class="primary">登录工作台</button>
       <button id="register" type="button" class="secondary">创建个人工作空间</button>
       <p class="muted">企业成员请使用管理员创建的账号。个人注册会创建独立空间。</p>
@@ -57,8 +58,8 @@
         <div class="topbar-actions"><span id="connection" class="status-tag">尚未连接任务</span><button id="inspector-toggle" class="icon-button" aria-label="折叠审查区" aria-expanded="true" aria-controls="inspector"><svg class="icon" aria-hidden="true"><use href="#icon-panel"/></svg></button></div></header>
       <section id="chat-view" class="view chat-view">
         <div id="conversation" class="conversation" aria-live="polite">
-          <div id="welcome" class="welcome"><span class="eyebrow">从一个清楚的目标开始</span><h1>今天，推进什么？</h1>
-            <p>描述任务、补充约束，或先上传资料。需要写文件和执行代码时，我会请求你的审批。</p>
+          <div id="welcome" class="welcome"><svg class="welcome-symbol icon" aria-hidden="true"><use href="#icon-chat"/></svg><h1>我们今天做些什么？</h1>
+            <p>描述目标与约束。需要写文件或运行代码时，我会先请求审批。</p>
             <div class="suggestions"><button data-prompt="根据我的知识库回答问题，并列出来源和不足。">从资料中找答案 <svg class="icon" aria-hidden="true"><use href="#icon-arrow"/></svg></button>
               <button data-prompt="帮我审查代码。先列出所需文件与检查计划，再执行只读分析。">审查代码与边界 <svg class="icon" aria-hidden="true"><use href="#icon-arrow"/></svg></button>
               <button data-prompt="我希望你记住：回答使用中文，先给结论，未经确认不要修改文件。">建立我的协作偏好 <svg class="icon" aria-hidden="true"><use href="#icon-arrow"/></svg></button></div>
