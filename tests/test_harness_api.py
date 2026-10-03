@@ -49,8 +49,8 @@ async def account(client, name):
     return {"Authorization": "Bearer " + result.json()["token"]}
 
 
-async def wait_run(client, headers, run_id, statuses):
-    async with asyncio.timeout(10):
+async def wait_run(client, headers, run_id, statuses, timeout=10):
+    async with asyncio.timeout(timeout):
         while True:
             result = (await client.get(f"/api/v1/runs/{run_id}", headers=headers)).json()
             if result["status"] in statuses:

@@ -273,34 +273,51 @@ class Worker:
             ]
         allowed = {tool["function"]["name"] for tool in catalog}
         messages, step, config = list(run.messages), run.step, dict(run.config)
-        if config["mode"] == "plan" and not config.get("planned"):
-            if step >= config["max_steps"]:
-                await self.finish(run.id, "failed", error="运行步数预算耗尽")
-                return
-            step += 1
-            config["planned"] = True
-            try:
-                response = await self.model_call(
-                    run,
-                    messages
-                    + [
+        if config.get("collaboration_mode") and not config.get("collaboration_initialized"):
+            messages[0] = {
+                **messages[0],
+                "content": messages[0]["content"]
+                + "协作默认方式为"
+                + config["collaboration_mode"]
+                + "。可按任务通过delegate选择合法方式；只读子任务最多两个。"
+                "需要先后执行时用节点id与depends_on；声明required_tools作为独立工具证据验收。",
+            }
+            config["collaboration_initialized"] = True
+            await self.checkpoint(
+                run.id,
+                messages,
+                step,
+                "collaboration_configured",
+                {"mode": config["collaboration_mode"]},
+                config,
+            )
+        if config.get("project_mode") and not config.get("project_setup_requested"):
+            # 服务端选择确定性转成审批工具调用，不能只靠模型理解提示词。
+            messages.append(
+                {
+                    "role": "assistant",
+                    "content": "准备所选代码工作区，等待审批。",
+                    "tool_calls": [
                         {
-                            "role": "user",
-                            "content": (
-                                '仅输出JSON计划，格式为{"steps":["步骤"]}，此阶段禁止工具调用。'
-                            ),
+                            "id": "project-" + run.id,
+                            "type": "function",
+                            "function": {
+                                "name": "project_prepare",
+                                "arguments": canonical({"mode": config["project_mode"]}),
+                            },
                         }
                     ],
-                )
-                plan = json.loads(response.content)
-                if not isinstance(plan, dict) or not isinstance(plan.get("steps"), list):
-                    raise ValueError("计划格式无效")
-                messages.append({"role": "assistant", "content": "计划：" + canonical(plan)})
-                await self.checkpoint(run.id, messages, step, "plan", plan, config)
-            except Exception as exc:
-                await self.checkpoint(
-                    run.id, messages, step, "plan_fallback", {"reason": str(exc)[:500]}, config
-                )
+                }
+            )
+            config["project_setup_requested"] = True
+            await self.checkpoint(
+                run.id,
+                messages,
+                step,
+                "project_requested",
+                {"mode": config["project_mode"]},
+                config,
+            )
         while True:
             current_run = await self.load(run.id)
             config = {**config, **current_run.config}
@@ -317,6 +334,33 @@ class Worker:
             if step >= config["max_steps"] - config.get("delegated_steps", 0):
                 await self.finish(run.id, "failed", error="运行步数预算耗尽")
                 return
+            if config["mode"] == "plan" and not config.get("planned"):
+                # 审批工具先完成，再规划；恢复和循环都沿用同一检查点。
+                step += 1
+                config["planned"] = True
+                try:
+                    response = await self.model_call(
+                        run,
+                        messages
+                        + [
+                            {
+                                "role": "user",
+                                "content": (
+                                    '仅输出JSON计划，格式为{"steps":["步骤"]}，此阶段禁止工具调用。'
+                                ),
+                            }
+                        ],
+                    )
+                    plan = json.loads(response.content)
+                    if not isinstance(plan, dict) or not isinstance(plan.get("steps"), list):
+                        raise ValueError("计划格式无效")
+                    messages.append({"role": "assistant", "content": "计划：" + canonical(plan)})
+                    await self.checkpoint(run.id, messages, step, "plan", plan, config)
+                except Exception as exc:
+                    await self.checkpoint(
+                        run.id, messages, step, "plan_fallback", {"reason": str(exc)[:500]}, config
+                    )
+                continue
             step += 1
             response = await self.model_call(run, messages, catalog)
             raw_message = ((response.raw or {}).get("choices") or [{}])[0].get("message", {})

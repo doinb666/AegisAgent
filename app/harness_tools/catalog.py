@@ -3,7 +3,7 @@
 import re
 from copy import deepcopy
 
-from jsonschema import validate
+from jsonschema import ValidationError, validate
 
 from app.core.tools.builtin.calculator import CalculatorTool
 from app.harness_tools import delegation
@@ -73,7 +73,46 @@ SCHEMAS = [
         "delegate",
         "主控委派最多两个只读子任务，并汇总结果",
         {
-            "tasks": {"type": "array", "minItems": 1, "maxItems": 2, "items": STRING},
+            "tasks": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 2,
+                "items": {
+                    "oneOf": [
+                        STRING,
+                        {
+                            "type": "object",
+                            "required": ["id", "message"],
+                            "additionalProperties": False,
+                            "properties": {
+                                "id": {"type": "string", "minLength": 1, "maxLength": 64},
+                                "message": STRING,
+                                "depends_on": {
+                                    "type": "array",
+                                    "maxItems": 2,
+                                    "uniqueItems": True,
+                                    "items": {"type": "string"},
+                                },
+                                "acceptance": {
+                                    "type": "object",
+                                    "additionalProperties": False,
+                                    "properties": {
+                                        "required_tools": {
+                                            "type": "array",
+                                            "maxItems": 5,
+                                            "uniqueItems": True,
+                                            "items": {
+                                                "type": "string",
+                                                "enum": list(delegation.READ_ONLY_TOOLS),
+                                            },
+                                        }
+                                    },
+                                },
+                            },
+                        },
+                    ]
+                },
+            },
             "mode": {"type": "string", "enum": ["fork", "team"]},
         },
         ["tasks"],
@@ -88,6 +127,9 @@ SCHEMAS = [
 
 
 class HarnessTools:
+    # 固定的受信服务器适配器声明；请求参数和模型输出均不能修改此权限集。
+    readonly_child_tools = delegation.READ_ONLY_TOOLS
+
     def __init__(self, settings):
         self.settings = settings
         self.service = None
@@ -126,7 +168,12 @@ class HarnessTools:
         schema = next((s for s in self.catalog(principal) if s["function"]["name"] == name), None)
         if schema is None:
             raise PermissionError("没有使用此工具的权限")
-        validate(arguments, schema["function"]["parameters"])
+        try:
+            validate(arguments, schema["function"]["parameters"])
+        except ValidationError:
+            if name == "delegate":
+                return {"status": "failed", "error": "委派参数不符合工具协议", "children": []}
+            raise
         if name == "calculator":
             return await CalculatorTool().execute(**arguments)
         if name == "knowledge_search":
@@ -153,7 +200,10 @@ class HarnessTools:
         if name == "skill_read":
             return await self.service.read_skill(principal, **arguments)
         if name == "file_read":
-            return await self.workspace.read(principal, run_id, arguments["path"])
+            source = (
+                await self.service.file_read_source(principal, run_id) if self.service else run_id
+            )
+            return await self.workspace.read(principal, source, arguments["path"])
         if name == "file_write":
             return await self.workspace.write(principal, run_id, **arguments)
         if name == "python_execute":
@@ -170,5 +220,10 @@ class HarnessTools:
                 self.service, self.settings, principal, run_id, arguments
             )
         if name == "project_prepare":
-            return await self.projects.prepare(principal, run_id, arguments["mode"])
+            if self.service:
+                await self.service.validate_project_prepare(principal, run_id)
+            result = await self.projects.prepare(principal, run_id, arguments["mode"])
+            if self.service:
+                await self.service.mark_project_prepared(principal, run_id, arguments["mode"])
+            return result
         raise ValueError("未知工具")

@@ -37,10 +37,14 @@ class Member(Credentials):
 
 
 class RunInput(BaseModel):
+    model_config = {"extra": "forbid"}
+
     message: str = Field(min_length=1, max_length=16000)
     session_id: str | None = Field(default=None, max_length=128)
     mode: Literal["react", "plan", "reflection"] = "react"
     model: str | None = Field(default=None, max_length=128)
+    collaboration_mode: Literal["fork", "team"] | None = None
+    project_mode: Literal["fork", "worktree"] | None = None
 
 
 class ApprovalInput(BaseModel):
@@ -120,9 +124,17 @@ async def member(body: Member, request: Request, principal=Depends(identity)):
 async def capabilities(request: Request, principal=Depends(identity)):
     harness = service(request)
     models = getattr(harness.model_router, "_configs", [])
+    routes = getattr(harness.model_router, "public_routes", lambda: [])()
     return {
         "name": "AegisCode",
         "models": sorted({model.model_id for model in models}),
+        "model_routes": routes,
+        "model_protocols": ["openai", "custom", "anthropic", "azure", "ollama"],
+        "collaboration": {
+            "modes": ["fork", "team"],
+            "max_children": 2,
+            "project_modes": ["fork", "worktree"] if harness.settings.repository_root else [],
+        },
         "tools": [t["function"]["name"] for t in harness.tool_executor.catalog(principal)],
         "sandbox": bool(harness.settings.sandbox_url),
         "role": principal.role,
@@ -137,6 +149,14 @@ async def create_run(
     principal=Depends(identity),
     idempotency_key: str = Header(alias="Idempotency-Key", min_length=1, max_length=256),
 ):
+    configured = getattr(service(request).model_router, "public_routes", lambda: [])()
+    if (
+        body.model
+        and configured
+        and body.model
+        not in {value for route in configured for value in (route["id"], route["model"])}
+    ):
+        raise HTTPException(422, "模型未配置，请从可用来源中选择")
     return await service(request).create_run(
         principal, idempotency_key=idempotency_key, **body.model_dump()
     )
@@ -148,7 +168,8 @@ async def runs(
     query: str | None = Query(default=None, max_length=200),
     status: Literal[
         "queued", "running", "waiting_approval", "completed", "failed", "cancelled", "interrupted"
-    ] | None = None,
+    ]
+    | None = None,
     limit: int = Query(default=100, ge=1, le=100),
     before: str | None = Query(default=None, max_length=128),
     principal=Depends(identity),

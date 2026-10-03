@@ -4,18 +4,19 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
-import json
-import os
 import random
 from dataclasses import dataclass, field
 from typing import Any
 
 from loguru import logger
-from openai import APIError, AsyncOpenAI, RateLimitError
+from openai import AsyncAzureOpenAI, AsyncOpenAI
 from pydantic import BaseModel
 
 from app.infrastructure.llm.circuit_breaker import CircuitBreaker
 from app.infrastructure.llm.types import ModelProvider
+
+from .anthropic_adapter import AnthropicClient
+from .model_config import parse_entries
 
 
 class LLMResponse(BaseModel):
@@ -32,12 +33,14 @@ class ModelConfig:
     """单路模型配置。"""
 
     model_id: str
-    api_key: str
+    api_key: str = field(repr=False)
     base_url: str | None = None
     provider: ModelProvider = ModelProvider.OPENAI
     priority: int = 0
     weight: float = 1.0
     extra: dict[str, Any] = field(default_factory=dict)
+    label: str = ""
+    api_version: str | None = None
 
 
 class ModelRouter:
@@ -65,18 +68,42 @@ class ModelRouter:
                 recovery_timeout=recovery_timeout,
                 name=f"llm:{route}",
             )
-        self._clients: dict[str, AsyncOpenAI] = {}
+        self._clients: dict[str, Any] = {}
         for cfg in self._configs:
             kwargs: dict[str, Any] = {"api_key": cfg.api_key, "timeout": timeout, "max_retries": 0}
-            if cfg.base_url:
-                kwargs["base_url"] = cfg.base_url
-            self._clients[self._route_key(cfg)] = AsyncOpenAI(**kwargs)
+            if cfg.provider == ModelProvider.ANTHROPIC:
+                client = AnthropicClient(cfg.api_key, cfg.base_url, timeout)
+            elif cfg.provider == ModelProvider.AZURE:
+                client = AsyncAzureOpenAI(
+                    **kwargs, azure_endpoint=cfg.base_url, api_version=cfg.api_version
+                )
+            else:
+                if cfg.base_url:
+                    kwargs["base_url"] = cfg.base_url
+                client = AsyncOpenAI(**kwargs)
+            self._clients[self._route_key(cfg)] = client
 
     @staticmethod
     def _route_key(cfg: ModelConfig) -> str:
         """同名模型在不同端点具有独立连接与熔断状态。"""
         endpoint = hashlib.sha256((cfg.base_url or "openai").encode()).hexdigest()[:12]
-        return f"{endpoint}:{cfg.model_id}"
+        return f"{cfg.provider.value}:{endpoint}:{cfg.model_id}"
+
+    def public_routes(self) -> list[dict]:
+        """仅公开选择所需元信息，隐藏地址、凭证及自定义正文。"""
+        return [
+            {
+                "id": self._public_id(cfg),
+                "model": cfg.model_id,
+                "label": cfg.label or f"{cfg.provider.value} · {cfg.model_id}",
+                "provider": cfg.provider.value,
+                "priority": cfg.priority,
+            }
+            for cfg in self._configs
+        ]
+
+    def _public_id(self, cfg: ModelConfig) -> str:
+        return "route-" + hashlib.sha256(self._route_key(cfg).encode()).hexdigest()[:32]
 
     def _select_candidates(
         self,
@@ -84,9 +111,11 @@ class ModelRouter:
     ) -> list[ModelConfig]:
         """按优先级分组，在同优先级内按权重随机排序，形成候选列表。"""
         if model_preference:
-            exact = [c for c in self._configs if c.model_id == model_preference]
+            exact = [c for c in self._configs if self._public_id(c) == model_preference]
+            if not exact:
+                exact = [c for c in self._configs if c.model_id == model_preference]
             if exact:
-                return exact + [c for c in self._configs if c.model_id != model_preference]
+                return exact + [c for c in self._configs if c not in exact]
 
         by_prio: dict[int, list[ModelConfig]] = {}
         for cfg in self._configs:
@@ -113,7 +142,6 @@ class ModelRouter:
 
     async def _chat(self, messages, model_preference=None, **kwargs) -> LLMResponse:
         candidates = self._select_candidates(model_preference)
-        last_error: Exception | None = None
 
         for cfg in candidates:
             breaker = self._breakers[self._route_key(cfg)]
@@ -124,21 +152,10 @@ class ModelRouter:
                     messages,
                     **kwargs,
                 )
-            except RuntimeError as exc:
-                # 熔断打开
-                last_error = exc
-                logger.warning("模型 [{}] 被熔断跳过: {}", cfg.model_id, exc)
-            except (TimeoutError, APIError, RateLimitError) as exc:
-                last_error = exc
-                logger.warning("模型 [{}] 调用失败，尝试降级: {}", cfg.model_id, exc)
             except Exception as exc:
-                last_error = exc
-                logger.exception("模型 [{}] 未预期错误: {}", cfg.model_id, exc)
+                logger.warning("模型 [{}] 调用失败，尝试降级: {}", cfg.model_id, type(exc).__name__)
 
-        msg = "所有候选模型均不可用"
-        if last_error:
-            raise RuntimeError(msg) from last_error
-        raise RuntimeError(msg)
+        raise RuntimeError("所有候选模型均不可用；请检查模型配置或稍后重试") from None
 
     async def _try_model(
         self,
@@ -149,26 +166,27 @@ class ModelRouter:
         """尝试调用指定模型（经熔断器包装，不在此处重复熔断逻辑）。"""
         client = self._clients[model_id]
         config = next(c for c in self._configs if self._route_key(c) == model_id)
-        temperature = kwargs.pop("temperature", 0.7)
-        max_tokens = kwargs.pop("max_tokens", None)
-
-        params: dict[str, Any] = {
+        params = {
+            "temperature": 0.7,
+            **config.extra,
+            **kwargs,
             "model": config.model_id,
             "messages": messages,
-            "temperature": temperature,
         }
-        if max_tokens is not None:
-            params["max_tokens"] = max_tokens
-        params.update(kwargs)
-
-        try:
-            resp = await client.chat.completions.create(**params)
-        except Exception:
-            logger.exception("OpenAI 兼容接口调用失败 model_id={}", model_id)
-            raise
+        if config.provider == ModelProvider.ANTHROPIC:
+            raw = await client.create(params)
+            return LLMResponse(
+                content=raw["choices"][0]["message"]["content"],
+                model_id=config.model_id,
+                usage=raw["usage"],
+                raw=raw,
+            )
+        resp = await client.chat.completions.create(**params)
 
         choice = resp.choices[0] if resp.choices else None
         content = (choice.message.content or "") if choice else ""
+        if not content.strip() and not (choice and getattr(choice.message, "tool_calls", None)):
+            raise ValueError("模型未返回可用文本或工具调用")
         usage = None
         if resp.usage:
             usage = {
@@ -195,23 +213,21 @@ def build_harness_router(settings) -> ModelRouter | None:
     """密钥只从环境读取；兼容原有 OPENAI 配置。"""
     from app.config import get_settings
 
-    entries = json.loads(settings.models_json)
-    if not isinstance(entries, list):
-        raise ValueError("AEGIS_MODELS_JSON 必须为数组")
+    entries = parse_entries(settings.models_json)
     configs = []
     seen = set()
     for item in entries:
-        if "api_key" in item:
-            raise ValueError("模型配置请使用 api_key_env，禁止内嵌密钥")
-        key = os.environ.get(item.get("api_key_env", ""), "")
-        if not key:
-            raise ValueError("模型密钥环境变量未配置")
         config = ModelConfig(
-            model_id=item["model"],
-            api_key=key,
-            base_url=item.get("base_url"),
-            priority=int(item.get("priority", 0)),
-            weight=float(item.get("weight", 1)),
+            model_id=item.model,
+            api_key=item.credentials(),
+            provider=item.provider,
+            base_url=item.base_url
+            or ("http://127.0.0.1:11434/v1" if item.provider == ModelProvider.OLLAMA else None),
+            priority=item.priority,
+            weight=item.weight,
+            extra=item.extra,
+            label=item.label,
+            api_version=item.api_version,
         )
         route = ModelRouter._route_key(config)
         if route in seen:

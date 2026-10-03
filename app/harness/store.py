@@ -39,7 +39,11 @@ def run_dict(run):
         "parent_run_id",
         "created",
     )
-    return {key: getattr(run, key) for key in fields}
+    return {
+        **{key: getattr(run, key) for key in fields},
+        "collaboration_mode": run.config.get("collaboration_mode"),
+        "project_mode": run.config.get("project_mode"),
+    }
 
 
 def asset_dict(asset):
@@ -134,12 +138,14 @@ class Store:
     async def stop_children(self, session, parent):
         children = (
             await session.scalars(
-                select(Run).where(
+                select(Run)
+                .where(
                     Run.parent_run_id == parent.id,
                     Run.tenant_id == parent.tenant_id,
                     Run.owner_id == parent.owner_id,
                     Run.status.in_(ACTIVE_STATUSES),
-                ).order_by(Run.id)
+                )
+                .order_by(Run.id)
             )
         ).all()
         for child in children:
@@ -227,12 +233,15 @@ class Store:
             parents = (
                 await session.scalars(
                     select(Run)
-                    .join(child, (
-                        (child.parent_run_id == Run.id)
-                        & (child.tenant_id == Run.tenant_id)
-                        & (child.owner_id == Run.owner_id)
-                        & child.status.in_(ACTIVE_STATUSES)
-                    ))
+                    .join(
+                        child,
+                        (
+                            (child.parent_run_id == Run.id)
+                            & (child.tenant_id == Run.tenant_id)
+                            & (child.owner_id == Run.owner_id)
+                            & child.status.in_(ACTIVE_STATUSES)
+                        ),
+                    )
                     .where(Run.status.in_(TERMINAL_STATUSES))
                     .distinct()
                     .order_by(Run.id)
@@ -251,14 +260,16 @@ class Store:
             if child_only:
                 parent = aliased(Run)
                 eligible = eligible.where(
-                    select(parent.id).where(
+                    select(parent.id)
+                    .where(
                         parent.id == Run.parent_run_id,
                         parent.tenant_id == Run.tenant_id,
                         parent.owner_id == Run.owner_id,
                         parent.status == "running",
                         parent.lease_owner.is_not(None),
                         parent.lease_until > time.time(),
-                    ).exists()
+                    )
+                    .exists()
                 )
             candidates = (
                 await session.scalars(
@@ -273,7 +284,8 @@ class Store:
                     update(Run)
                     .where(Run.id == run.id, Run.status == "queued")
                     .values(
-                        status="running", lease_owner=worker_id,
+                        status="running",
+                        lease_owner=worker_id,
                         lease_until=claimed_at + self.settings.lease_seconds,
                     )
                 )

@@ -1,19 +1,19 @@
-# -*- coding: utf-8 -*-
 """三态熔断器：保护下游服务免受连续失败冲击。"""
 
 from __future__ import annotations
 
 import asyncio
 import time
-from enum import Enum
-from typing import Any, Awaitable, Callable, TypeVar
+from collections.abc import Awaitable, Callable
+from enum import StrEnum
+from typing import Any, TypeVar
 
 from loguru import logger
 
 T = TypeVar("T")
 
 
-class CircuitState(str, Enum):
+class CircuitState(StrEnum):
     """熔断器状态：关闭（正常）、打开（拒绝）、半开（试探）。"""
 
     CLOSED = "closed"
@@ -115,10 +115,16 @@ class CircuitBreaker:
 
         try:
             result = await func(*args, **kwargs)
+        except asyncio.CancelledError:
+            async with self._lock:
+                if self._state == CircuitState.HALF_OPEN:
+                    # 探测结果未知时重新打开，恢复窗口后可再次尝试，不吞掉取消。
+                    self._record_failure()
+            raise
         except Exception as exc:
             async with self._lock:
                 self._record_failure()
-            logger.exception("熔断器 [{}] 包裹调用失败: {}", self.name, exc)
+            logger.warning("熔断器 [{}] 包裹调用失败: {}", self.name, type(exc).__name__)
             raise
 
         async with self._lock:

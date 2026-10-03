@@ -104,7 +104,8 @@ async def make_service(tmp_path, model=None, **options):
 
 
 async def finished(service, principal, run_id):
-    async with asyncio.timeout(5):
+    # 两阶段依赖图包含子工具、证据资产和父汇总，Windows SQLite 需保留调度余量。
+    async with asyncio.timeout(10):
         while True:
             run = await service.get_run(principal, run_id)
             if run["status"] in {"completed", "failed", "cancelled", "interrupted"}:

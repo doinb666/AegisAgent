@@ -158,6 +158,8 @@ class HarnessService(AssetService):
         parent_run_id=None,
         allowed_tools=None,
         max_steps=None,
+        collaboration_mode=None,
+        project_mode=None,
     ):
         if not message.strip() or not idempotency_key or len(idempotency_key) > 256:
             raise HarnessError(422, "消息和幂等键不能为空，幂等键最多256字符")
@@ -165,6 +167,17 @@ class HarnessService(AssetService):
             raise HarnessError(422, "运行模式无效")
         if max_steps is not None and not 1 <= max_steps <= self.settings.max_steps:
             raise HarnessError(422, "步数超出配置预算")
+        if collaboration_mode not in {None, "fork", "team"} or project_mode not in {
+            None,
+            "fork",
+            "worktree",
+        }:
+            raise HarnessError(422, "协作或项目模式无效")
+        if collaboration_mode is not None or project_mode is not None:
+            if parent_run_id or principal.role not in {"operator", "admin"}:
+                raise HarnessError(403, "协作配置仅允许顶级 operator 运行")
+        if project_mode and not self.settings.repository_root:
+            raise HarnessError(409, "管理员尚未配置 AEGIS_REPOSITORY_ROOT")
         payload = dict(
             message=message,
             session_id=session_id,
@@ -174,6 +187,11 @@ class HarnessService(AssetService):
             allowed_tools=allowed_tools,
             max_steps=max_steps,
         )
+        # 未配置的新增选项保留旧请求哈希；显式配置仍参与幂等比较。
+        if collaboration_mode is not None:
+            payload["collaboration_mode"] = collaboration_mode
+        if project_mode is not None:
+            payload["project_mode"] = project_mode
         payload_hash = digest(canonical(payload))
         async with self.store.write_lock:
             try:
@@ -244,6 +262,11 @@ class HarnessService(AssetService):
                             self.tool_executor.requires_approval(name, {}) for name in allowed_tools
                         ):
                             raise HarnessError(403, "子运行禁止需要审批的工具")
+                        child_catalog = getattr(self.tool_executor, "readonly_child_tools", None)
+                        if child_catalog is not None and not set(allowed_tools).issubset(
+                            set(child_catalog) & set(self.accessible_tool_names(principal))
+                        ):
+                            raise HarnessError(403, "子运行只读工具必须来自身份可访问目录")
                         parent_allowed = parent_config.get("allowed_tools")
                         if parent_allowed is not None and not set(allowed_tools).issubset(
                             parent_allowed
@@ -361,6 +384,8 @@ class HarnessService(AssetService):
                             "mode": mode,
                             "allowed_tools": allowed_tools,
                             "max_steps": max_steps or self.settings.max_steps,
+                            "collaboration_mode": collaboration_mode,
+                            "project_mode": project_mode,
                         },
                         messages=messages,
                         created=time.time(),
@@ -403,6 +428,118 @@ class HarnessService(AssetService):
     async def get_run(self, principal, run_id):
         async with self.store.sessions() as session:
             return run_dict(await self.store.owned(session, Run, run_id, principal))
+
+    async def mark_project_prepared(self, principal, run_id, mode):
+        """仅由审批后的准备工具记录成功结果，不保存宿主路径。"""
+        async with self.store.transaction() as session:
+            run = await self.store.owned(session, Run, run_id, principal)
+            if run.parent_run_id or run.status != "running":
+                raise HarnessError(409, "仅运行中的主控可以准备项目")
+            run.config = {**run.config, "project_prepared": {"mode": mode}}
+            self.store.emit(session, run, "project_prepared", {"mode": mode})
+
+    async def validate_project_prepare(self, principal, run_id):
+        async with self.store.sessions() as session:
+            run = await self.store.owned(session, Run, run_id, principal)
+            if run.parent_run_id or run.status != "running":
+                raise HarnessError(409, "仅运行中的主控可以准备项目")
+            allowed = run.config.get("allowed_tools")
+            if principal.role not in {"admin", "operator"} or (
+                allowed is not None and "project_prepare" not in allowed
+            ):
+                raise HarnessError(403, "没有准备项目工作区的权限")
+
+    async def file_read_source(self, principal, run_id):
+        """来源只由真实父子链解析，子任务不能传入其他运行或宿主路径。"""
+        async with self.store.sessions() as session:
+            child = await self.store.owned(session, Run, run_id, principal)
+            source = child
+            if child.parent_run_id:
+                source = await self.store.owned(session, Run, child.parent_run_id, principal)
+                if (
+                    source.parent_run_id
+                    or source.status != "running"
+                    or not source.lease_owner
+                    or not source.lease_until
+                    or source.lease_until <= time.time()
+                ):
+                    raise HarnessError(409, "父运行或租约已失效")
+                if child.status not in ACTIVE_STATUSES:
+                    raise HarnessError(409, "子运行已停止")
+                if not source.config.get("project_prepared"):
+                    raise HarnessError(409, "父项目工作区尚未准备")
+                if self.inspection.workspace._read_only_directory(principal, source.id) is None:
+                    raise HarnessError(409, "已准备的父工作区不存在")
+            for run in (child, source):
+                allowed = run.config.get("allowed_tools")
+                if allowed is not None and "file_read" not in allowed:
+                    raise HarnessError(403, "file_read 不在父子权限交集中")
+            if "file_read" not in self.accessible_tool_names(principal):
+                raise HarnessError(403, "身份没有 file_read 权限")
+            return source.id
+
+    async def verify_collaboration_child(self, principal, parent_id, child_id, required_tools):
+        """验收执行契约，绝不将回答中的成功声明当作工具证据。"""
+        async with self.store.transaction() as session:
+            parent = await self.store.owned(session, Run, parent_id, principal)
+            child = await self.store.owned(session, Run, child_id, principal)
+            reasons = []
+            if parent.parent_run_id or child.parent_run_id != parent.id:
+                reasons.append("父子关系不匹配")
+            if child.status != "completed" or not (child.answer or "").strip():
+                reasons.append("子任务未完成或答案为空")
+            calls = list(
+                await session.scalars(
+                    select(ToolCall).where(*scope(ToolCall, principal), ToolCall.run_id == child.id)
+                )
+            )
+            if any(call.status != "done" for call in calls):
+                reasons.append("工具账本包含失败、未知或未完成调用")
+            failed_call_ids = {
+                call.id
+                for call in calls
+                if isinstance(call.result, dict)
+                and call.result.get("status") in ("failed", "error")
+            }
+            if failed_call_ids:
+                reasons.append("工具结果明确报告失败")
+            successful_calls = [
+                call for call in calls if call.status == "done" and call.id not in failed_call_ids
+            ]
+            done = {call.name for call in successful_calls}
+            missing = sorted(set(required_tools) - done)
+            if missing:
+                reasons.append("缺少必需工具证据：" + "、".join(missing))
+            result = {
+                "status": "rejected" if reasons else "verified",
+                "run_id": child.id,
+                "reasons": reasons,
+                "required_tools": list(required_tools),
+                "evidence": [
+                    {"tool_call_id": call.id, "name": call.name} for call in successful_calls
+                ],
+            }
+            self.store.emit(session, parent, "collaboration_acceptance", result)
+            return result
+
+    async def delegation_child_ids(self, principal, parent_id, idempotency_keys):
+        """按受信批次键查询已提交子运行，覆盖提交成功但响应尚未返回的取消窗口。"""
+        async with self.store.sessions() as session:
+            await self.store.owned(session, Run, parent_id, principal)
+            return list(
+                await session.scalars(
+                    select(Run.id).where(
+                        *scope(Run, principal),
+                        Run.parent_run_id == parent_id,
+                        Run.idempotency_key.in_(idempotency_keys),
+                    )
+                )
+            )
+
+    async def record_collaboration(self, principal, run_id, nodes):
+        async with self.store.transaction() as session:
+            parent = await self.store.owned(session, Run, run_id, principal)
+            self.store.emit(session, parent, "collaboration_graph", {"nodes": nodes})
 
     async def delegation_context(self, principal, run_id, task_count):
         """内核专用整批预检；公开运行响应不暴露权限或配置。"""
@@ -447,6 +584,7 @@ class HarnessService(AssetService):
                 "allowed_tools": names,
                 "session_id": parent.session_id,
                 "deadline": parent.created + self.settings.run_timeout_seconds,
+                "collaboration_mode": parent.config.get("collaboration_mode"),
             }
 
     async def list_runs(self, principal, query=None, status=None, limit=100, before=None):
