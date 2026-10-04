@@ -21,12 +21,12 @@ AegisCode 面向个人开发者和企业成员：描述目标，由 Agent 规划
 
 ### Windows 桌面使用
 
-当前版本 **0.2.3**：[版本说明与全部下载](https://github.com/doinb666/AegisAgent/releases/tag/v0.2.3)。
+当前版本 **0.2.4**：[版本说明与全部下载](https://github.com/doinb666/AegisAgent/releases/tag/v0.2.4)。
 
-- [Windows 安装器 EXE](https://github.com/doinb666/AegisAgent/releases/download/v0.2.3/AegisCode-Setup.exe)：安装到空目录后双击 AegisCode.exe。
-- [Windows 便携 ZIP](https://github.com/doinb666/AegisAgent/releases/download/v0.2.3/AegisCode-portable.zip)：解压并保留完整目录。
-- [Python wheel](https://github.com/doinb666/AegisAgent/releases/download/v0.2.3/aegiscode-0.2.3-py3-none-any.whl)：适合 Python 用户。
-- [SHA256 校验和](https://github.com/doinb666/AegisAgent/releases/download/v0.2.3/SHA256SUMS.txt)：使用 PowerShell `Get-FileHash 文件名 -Algorithm SHA256` 核对。
+- [Windows 安装器 EXE](https://github.com/doinb666/AegisAgent/releases/download/v0.2.4/AegisCode-Setup.exe)：安装到空目录后双击 AegisCode.exe。
+- [Windows 便携 ZIP](https://github.com/doinb666/AegisAgent/releases/download/v0.2.4/AegisCode-portable.zip)：解压并保留完整目录。
+- [Python wheel](https://github.com/doinb666/AegisAgent/releases/download/v0.2.4/aegiscode-0.2.4-py3-none-any.whl)：适合 Python 用户。
+- [SHA256 校验和](https://github.com/doinb666/AegisAgent/releases/download/v0.2.4/SHA256SUMS.txt)：使用 PowerShell `Get-FileHash 文件名 -Algorithm SHA256` 核对。
 
 如需自行构建，在 Windows 执行：
 
@@ -86,7 +86,7 @@ wheel 构建与安装：
 python -m pip install ".[dev]"
 python scripts/build_wheel.py
 # 安装 dist 中实际生成的 aegiscode-版本号-py3-none-any.whl
-python -m pip install dist/aegiscode-0.2.3-py3-none-any.whl
+python -m pip install dist/aegiscode-0.2.4-py3-none-any.whl
 aegiscode
 ```
 
@@ -184,7 +184,7 @@ Skill 快速体验：[下载示例 SKILL.md](docs/examples/skills/review-python/
 - **没有模型或任务失败**：填写模型配置并重启，确认该模型支持工具调用和你的账号权限。
 - **无法执行代码**：配置并验证 Docker 沙箱；未配置时拒绝执行，不降级为宿主运行。
 - **看不到仓库工具或 MCP**：它们由运维配置与用户授权决定，不能通过普通对话添加任意宿主路径或服务地址。
-- **下载或启动安装器**：使用上方 0.2.3 Release 链接并核对 SHA256；便携版不能只复制一个 EXE。8000 已占用时添加 `--port 8001` 启动。
+- **下载或启动安装器**：使用上方 0.2.4 Release 链接并核对 SHA256；便携版不能只复制一个 EXE。8000 已占用时添加 `--port 8001` 启动。
 
 API 文档位于 `/docs`，数据库就绪探针为 `/api/v1/health/ready`。业务 API 需要登录令牌，创建任务需要 `Idempotency-Key`。
 
