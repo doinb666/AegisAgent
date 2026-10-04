@@ -233,17 +233,17 @@ class Store:
             parents = (
                 await session.scalars(
                     select(Run)
-                    .join(
-                        child,
-                        (
-                            (child.parent_run_id == Run.id)
-                            & (child.tenant_id == Run.tenant_id)
-                            & (child.owner_id == Run.owner_id)
-                            & child.status.in_(ACTIVE_STATUSES)
-                        ),
+                    .where(
+                        Run.status.in_(TERMINAL_STATUSES),
+                        select(child.id)
+                        .where(
+                            child.parent_run_id == Run.id,
+                            child.tenant_id == Run.tenant_id,
+                            child.owner_id == Run.owner_id,
+                            child.status.in_(ACTIVE_STATUSES),
+                        )
+                        .exists(),
                     )
-                    .where(Run.status.in_(TERMINAL_STATUSES))
-                    .distinct()
                     .order_by(Run.id)
                 )
             ).all()
