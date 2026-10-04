@@ -4,7 +4,7 @@ from sqlalchemy import and_, func, or_, select
 
 from .errors import HarnessError
 from .models import Asset, Run
-from .store import run_dict, scope
+from .store import run_dict, run_view_query, scope
 
 RUN_STATUSES = (
     "queued",
@@ -33,9 +33,9 @@ class InspectionService:
         ):
             raise HarnessError(422, "任务查询参数无效")
         async with self.store.sessions() as session:
-            statement = select(Run).where(*scope(Run, principal))
+            statement = run_view_query(principal)
             if before is not None:
-                cursor = await self.store.owned(session, Run, before, principal)
+                cursor = await self.store.run_view(session, before, principal)
                 statement = statement.where(
                     or_(
                         Run.created < cursor.created,
@@ -46,7 +46,7 @@ class InspectionService:
                 statement = statement.where(Run.message.contains(query, autoescape=True))
             if status is not None:
                 statement = statement.where(Run.status == status)
-            runs = await session.scalars(
+            runs = await session.execute(
                 statement.order_by(Run.created.desc(), Run.id.desc()).limit(limit)
             )
             return [run_dict(run) for run in runs]
@@ -75,7 +75,7 @@ class InspectionService:
     async def _files(self, principal, run_id, path=None):
         # 先核对数据库所有权，再触碰文件系统，避免利用错误探测他人的目录。
         async with self.store.sessions() as session:
-            await self.store.owned(session, Run, run_id, principal)
+            await self.store.require_run_owner(session, run_id, principal)
         try:
             if path is None:
                 return await self.workspace.list_files(principal, run_id)

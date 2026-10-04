@@ -427,7 +427,7 @@ class HarnessService(AssetService):
 
     async def get_run(self, principal, run_id):
         async with self.store.sessions() as session:
-            return run_dict(await self.store.owned(session, Run, run_id, principal))
+            return run_dict(await self.store.run_view(session, run_id, principal))
 
     async def mark_project_prepared(self, principal, run_id, mode):
         """仅由审批后的准备工具记录成功结果，不保存宿主路径。"""
@@ -603,7 +603,7 @@ class HarnessService(AssetService):
         from .models import Event
 
         async with self.store.sessions() as session:
-            await self.store.owned(session, Run, run_id, principal)
+            await self.store.require_run_owner(session, run_id, principal)
             events = await session.scalars(
                 select(Event)
                 .where(*scope(Event, principal), Event.run_id == run_id, Event.id > after)

@@ -14,6 +14,20 @@ from .models import Base, Event, Run, ToolCall
 
 ACTIVE_STATUSES = ("queued", "running", "waiting_approval")
 TERMINAL_STATUSES = ("completed", "failed", "cancelled", "interrupted")
+RUN_PUBLIC_FIELDS = (
+    "id",
+    "session_id",
+    "message",
+    "status",
+    "answer",
+    "error",
+    "model",
+    "trace_id",
+    "step",
+    "approval",
+    "parent_run_id",
+    "created",
+)
 
 
 def uid() -> str:
@@ -25,25 +39,18 @@ def scope(model, principal):
 
 
 def run_dict(run):
-    fields = (
-        "id",
-        "session_id",
-        "message",
-        "status",
-        "answer",
-        "error",
-        "model",
-        "trace_id",
-        "step",
-        "approval",
-        "parent_run_id",
-        "created",
-    )
     return {
-        **{key: getattr(run, key) for key in fields},
+        **{key: getattr(run, key) for key in RUN_PUBLIC_FIELDS},
         "collaboration_mode": run.config.get("collaboration_mode"),
         "project_mode": run.config.get("project_mode"),
     }
+
+
+def run_view_query(principal):
+    """只投影公开状态字段，避免轮询反复下载和解码执行上下文。"""
+    return select(*(getattr(Run, key) for key in RUN_PUBLIC_FIELDS), Run.config).where(
+        *scope(Run, principal)
+    )
 
 
 def asset_dict(asset):
@@ -89,6 +96,21 @@ class Store:
         if obj is None:
             raise HarnessError(404, "资源不存在或无权访问")
         return obj
+
+    async def run_view(self, session, identifier, principal):
+        row = (
+            await session.execute(run_view_query(principal).where(Run.id == identifier))
+        ).one_or_none()
+        if row is None:
+            raise HarnessError(404, "资源不存在或无权访问")
+        return row
+
+    async def require_run_owner(self, session, identifier, principal):
+        identifier = await session.scalar(
+            select(Run.id).where(Run.id == identifier, *scope(Run, principal))
+        )
+        if identifier is None:
+            raise HarnessError(404, "资源不存在或无权访问")
 
     def emit(self, session, run, event_type, data):
         session.add(
