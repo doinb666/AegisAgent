@@ -73,3 +73,5 @@ Release [v0.2.5](https://github.com/doinb666/AegisAgent/releases/tag/v0.2.5) 已
 | AegisCode-source-v0.2.5.zip | 6099204 | 5e7e3e3ba9c24411839318b439a98a0edb58ec54a8cb5f1adac854e6d0fc8ee1 |
 
 发布目录：`dist/releases/v0.2.5/`。本轮完成读取优化、编码展示、导航交互、文档、浏览器/真实基础设施验收与新安装器发布；任务计划中明确排除的能力及旧正式进程重启仍未完成，不能将本阶段完成理解为全部研究路线或 Codex 能力完成。
+
+发布后从公网完整下载 wheel（138534 字节，3.97 秒）与 Setup（46138338 字节，32.70 秒），重新计算 SHA256 均与本地相符。README 三张图片的本地引用有效，公网首页图片返回 200 且与本地字节一致。正式 8001 服务最终 readiness 为 200、database up，当前在线 TypeScript bundle 已核对一致；未自动切换用户窗口，也未停止旧正式进程。
