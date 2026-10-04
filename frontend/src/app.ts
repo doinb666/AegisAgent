@@ -1,6 +1,8 @@
 "use strict";
 
 import WorkspaceUI from "./workspace-ui";
+import { initializeNavigation } from "./navigation";
+import { renderReply } from "./reply-view";
 
 const $ = (id: string): any => document.getElementById(id);
 const apiRoot = "/api/v1";
@@ -50,6 +52,7 @@ async function guard(action, button=null) {
   finally { if (button && token===state.token) button.disabled = button.id==="send" && state.runLoading; }
 }
 function resetLogin() {
+  navigation.close();
   clearTimeout(searchTimer);
   state.generation++; state.stream?.abort(); state.user=null; state.token=null;
   state.pendingRequest=null; state.run=null; state.session=null;
@@ -160,7 +163,7 @@ async function refreshRuns(more=false) {
 function message(role,text) {
   const article=document.createElement("article"); article.className=`message ${role}`;
   const label=document.createElement("span"); label.className="message-label"; label.textContent=role==="user"?"你":"AegisCode";
-  article.append(label,document.createTextNode(text)); $("conversation").append(article);
+  article.append(label,role === "assistant" ? renderReply(text) : document.createTextNode(text)); $("conversation").append(article);
 }
 function renderRun(run) {
   state.run=run; state.session=run.session_id;
@@ -323,6 +326,7 @@ async function showView(view) {
   }
 }
 document.querySelectorAll<HTMLElement>("[data-view]").forEach(b=>b.onclick=()=>guard(()=>showView(b.dataset.view)));
+const navigation = initializeNavigation(() => Boolean(state.user), newTask, view => guard(() => showView(view)));
 async function loadAssets() {
   const token=state.token,view=state.view,generation=++state.assetsGeneration;
   const valid=()=>token===state.token && view===state.view && generation===state.assetsGeneration;

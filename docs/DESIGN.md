@@ -7,3 +7,5 @@
 色彩以 CSS 变量和 OKLCH 定义；按钮、输入、列表共享圆角和 focus 样式。状态包括 idle、loading、running、waiting_approval、completed、failed、cancelled、interrupted 与 reconnecting。审批展开在任务区，内容以纯文本展示。动画仅用于 150–200ms 状态过渡，减少动画设置禁用。
 
 首版使用同源静态 HTML/CSS/JS，避免 EXE 安装依赖 Node。用户输出与工具参数通过 textContent 渲染，禁止不可信 HTML。持久事件以 ID 去重；网络失败重试读取事件，不重发任务创建。
+
+正式源码使用 TypeScript + Vite，继续输出同源静态页面。导航可折叠，窄屏首次加载默认收起；快捷跳转采用可搜索的内联区域，保留自然 Tab 顺序与 Escape 焦点恢复，不创建遮罩。模型代码块以纯文本渲染，复制成功与剪贴板失败均展示明确反馈；不把文件预览伪装成编辑器。深浅主题共享语义色与组件尺寸。
