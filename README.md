@@ -6,7 +6,7 @@ AegisCode 面向个人开发者和企业成员：描述目标，由 Agent 规划
 
 [安装与启动](#安装与启动) · [模型配置](#模型配置) · [使用方式](#使用方式) · [项目亮点](#项目亮点) · [使用手册](docs/使用手册.md)
 
-![AegisCode 工作台](docs/升级方案/截图/0.2.3/00-浅色空工作台.png)
+![AegisCode 工作台](docs/升级方案/截图/0.2.4/00-浅色空工作台.png)
 
 ## 安装与启动
 
@@ -17,7 +17,7 @@ AegisCode 面向个人开发者和企业成员：描述目标，由 Agent 规划
 | Docker 个人版 | 简单部署和持久化 | Docker Compose；SQLite 数据卷 |
 | Docker 企业版 | PostgreSQL 持久化部署 | Docker Compose；数据库密码；自己的 TLS 入口 |
 
-基础工作台不要求 Redis、Milvus 或 Node.js。使用模型需要可用的模型服务；执行代码需要单独配置 Docker 沙箱。
+已构建的工作台运行时不要求 Redis、Milvus 或 Node.js。使用模型需要可用的模型服务；执行代码需要单独配置 Docker 沙箱。只有修改 TypeScript 前端或自行构建发布包时需要 Node.js 20.19+ 或 22.12+ 与 npm。
 
 ### Windows 桌面使用
 
@@ -33,6 +33,8 @@ AegisCode 面向个人开发者和企业成员：描述目标，由 Agent 规划
 ```powershell
 git clone https://github.com/doinb666/AegisAgent.git
 cd AegisAgent
+npm ci
+npm run frontend:verify
 python -m venv .venv
 .venv/Scripts/python.exe -m pip install ".[dev]"
 .venv/Scripts/python.exe scripts/build_windows.py
@@ -119,7 +121,7 @@ OPENAI_MODEL=替换为可用且支持工具调用的模型
 AEGIS_DATA_DIR=data
 ```
 
-支持多个 OpenAI 兼容模型服务，按优先级切换；每个模型路由具有独立熔断状态。具体配置见 [安装与运维](docs/升级方案/06-安装与运维.md)。密钥只放环境变量或本地 `.env`，不要提交到 Git。
+源码支持 OpenAI 兼容／自定义网关、Anthropic 原生 Messages、Azure OpenAI 和本地 Ollama。最多配置 32 路来源，可按优先级和权重路由；同名模型的不同来源具有独立连接与熔断状态，失败时按候选顺序降级。具体字段与示例见 [多来源模型接入](docs/多来源模型接入.md)。密钥只放环境变量或本地 `.env`，不要提交到 Git。
 
 未配置模型时仍可登录、管理记忆和资料；执行任务会明确提示失败。模型列表表示已配置，连通性需实际调用验证。
 
@@ -149,13 +151,13 @@ Skill 快速体验：[下载示例 SKILL.md](docs/examples/skills/review-python/
 - **Agent Team**：独立上下文的受控子任务，由主 Agent 汇总证据。
 - **Worktree / 代码副本**：经审批从管理员绑定仓库准备独立目录；Worktree 使用 detached 方式，不自动合并用户分支。
 
-当前仓库准备与子任务读取仍是独立能力；父子代码目录联动、任务依赖图及独立结果验收门正在升级，尚不能作为完整协作编码团队使用。管理员仓库配置、工具调用和操作步骤见 [使用手册](docs/使用手册.md)；新增设计见 [协作升级方案](docs/升级方案/13-协作代码任务与鲁棒性验收.md)。
+准备仓库后，子任务可在父权限交集内只读父工作区；主控可提交最多两个节点的小型依赖图，根节点并行、后继仅在前驱通过账本验收后执行。验收门检查真实终态、非空回答、父子链和必需工具证据，不接受回答中的“已完成”自报。当前仍不允许子任务写仓库、递归委派或自动合并。管理员配置和操作步骤见 [使用手册](docs/使用手册.md)。
 
 ## 项目亮点
 
 - **受控任务闭环**：工具调用与持久任务结合，支持规划失败回退、默认 10 步预算、反思反馈和全链路 Trace ID。
 - **个人长期记忆与技能积累**：成功与失败轨迹提炼为偏好、约束、经验和 Skill 草稿；来源追溯、去重、版本修订和退役形成跨会话复用闭环。候选经审阅后生效，权限规则不参与自进化。
-- **分层上下文管理**：大工具结果外置保存，保留摘要与读取引用；近期窗口和结构化历史摘要控制长会话上下文。缓存与 Token 收益以实测为准。
+- **分层上下文管理**：大工具结果外置保存，保留预览与读取引用；按完整工具调用消息组裁剪近期窗口，并记录历史计数与边界提示。缓存与 Token 收益以实测为准。
 - **中心化多 Agent**：主控保留规划和审批权；子运行只读、有限预算、父权限子集，父停止后回收活跃子，长结果可按引用读取全文。
 - **权限与安全边界**：租户与用户隔离、角色控制、工具参数校验、模型风险信号和精确参数人工审批；代码只在配置的 Docker 沙箱执行。
 - **外部 MCP 与知识检索**：官方 MCP SDK 接入运维批准的服务；知识库使用 BM25，可选 Milvus 向量、RRF 融合和 Cross-Encoder 重排，依赖故障明确降级。
@@ -169,9 +171,9 @@ Skill 快速体验：[下载示例 SKILL.md](docs/examples/skills/review-python/
 |---|---|
 | 后端与执行内核 | Python 3.12、FastAPI、异步任务执行、原生工具调用 |
 | 存储 | SQLAlchemy async、SQLite（个人版）、PostgreSQL（企业版） |
-| 模型与外部工具 | OpenAI 兼容 API、MCP SDK、多模型路由与熔断 |
+| 模型与外部工具 | OpenAI 兼容／Anthropic／Azure／Ollama、自定义网关、MCP SDK、多模型路由与熔断 |
 | 可选知识检索 | Milvus、BM25、RRF、Cross-Encoder |
-| 工作台 | 同源 HTML / CSS / JavaScript、SSE |
+| 工作台 | TypeScript、Vite、HTML/CSS、SSE、Playwright |
 | 安装与隔离 | Docker Compose、Docker 执行沙箱、PyInstaller、Python wheel |
 
 当前主链路采用自主 Harness；LangChain、LangGraph、Redis 不再是当前核心依赖。完整使用方法见 [用户手册](docs/使用手册.md)，安全部署见 [安装与运维](docs/升级方案/06-安装与运维.md)，能力验证与边界见 [验收记录](docs/升级方案/12-多Agent协作补齐与验收.md)。
