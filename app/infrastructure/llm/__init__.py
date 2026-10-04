@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """LLM 子模块：模型路由与熔断器。"""
 
 from app.infrastructure.llm.circuit_breaker import CircuitBreaker, CircuitState

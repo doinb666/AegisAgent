@@ -1,6 +1,7 @@
 """知识分块、持久化恢复与租户/用户双隔离回归。"""
 
 import asyncio
+import threading
 
 import pytest
 
@@ -137,6 +138,39 @@ class ScopedVectors:
             {"id": item["id"], "distance": 0.0}
             for item in self.collections.get(collection, [])[:top_k]
         ]
+
+
+@pytest.mark.asyncio
+async def test_hybrid_recall_starts_both_branches_before_either_finishes(tmp_path):
+    """双分支相互等待启动信号，串行实现不能通过屏障。"""
+    settings, service, owner = await setup_service(tmp_path, knowledge_backend="hybrid")
+    keyword_started = threading.Event()
+    vector_started = threading.Event()
+
+    class BarrierVectors(ScopedVectors):
+        async def search(self, *args, **kwargs):
+            vector_started.set()
+            assert await asyncio.to_thread(keyword_started.wait, 2)
+            return await super().search(*args, **kwargs)
+
+    class BarrierKnowledge(KnowledgeService):
+        def _bm25(self, query, items):
+            keyword_started.set()
+            assert vector_started.wait(2), "向量召回未与 BM25 并行启动"
+            return super()._bm25(query, items)
+
+    try:
+        knowledge = BarrierKnowledge(
+            settings, service, vector_store=BarrierVectors(), embedding_model=FakeEmbedding()
+        )
+        document = await add_document(service, owner, "并行证据", ["needle"])
+        await knowledge.index(owner, document, ["needle"])
+        result = await knowledge.search(owner, "needle")
+        assert result["backend"] == "hybrid"
+        assert result["results"][0]["document_id"] == document["id"]
+        assert not result["warnings"]
+    finally:
+        await service.close()
 
 
 @pytest.mark.asyncio

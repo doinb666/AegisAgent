@@ -334,15 +334,25 @@ class KnowledgeService:
             warnings.append("检索达到文档、分块或字符预算，仅覆盖当前范围内的有限证据")
         if rebuilt:
             warnings.append("部分文档未保存当前版本分块，已按当前正文重建词法分块")
-        ranked = await asyncio.to_thread(self._bm25, query, items)
         backend = "bm25"
         if self.vector_enabled:
-            try:
-                vector = await self._bounded(self._search_vectors(principal, query, items))
+            # 两路只读取同一份已鉴权的块；向量异常独立降级，取消仍向上传播。
+            ranked, vector = await asyncio.gather(
+                asyncio.to_thread(self._bm25, query, items),
+                self._bounded(self._search_vectors(principal, query, items)),
+                return_exceptions=True,
+            )
+            if isinstance(ranked, BaseException):
+                raise ranked
+            if isinstance(vector, Exception):
+                warnings.append(self._failure("向量检索", vector))
+            elif isinstance(vector, BaseException):
+                raise vector
+            else:
                 ranked = self._fuse(ranked, vector)
                 backend = "hybrid"
-            except Exception as exc:
-                warnings.append(self._failure("向量检索", exc))
+        else:
+            ranked = await asyncio.to_thread(self._bm25, query, items)
         if self.reranker is not None and ranked:
             try:
                 ranked = await self._bounded(self._rerank(query, ranked))
