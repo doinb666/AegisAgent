@@ -52,10 +52,15 @@ def verify_session(client, prepare):
     assert any(item["name"] == "安装验收偏好" for item in current.json()["bootstrap"]["memories"])
     capabilities = client.get("/api/v1/capabilities", headers=headers)
     assert capabilities.status_code == 200
-    assert capabilities.json()["collaboration"]["project_modes"] == ["fork", "worktree"]
+    details = capabilities.json()
+    assert details["collaboration"]["modes"] == ["fork", "team"]
+    assert details["collaboration"]["max_children"] == 2
+    assert details["collaboration"]["project_modes"] == [], "未绑定仓库时应隐藏 Git 模式"
+    assert details["model_protocols"] == ["openai", "custom", "anthropic", "azure", "ollama"]
 
 
 def main():
+    sys.stdout.reconfigure(encoding="utf-8")
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--wheel", type=Path)
     parser.add_argument("--setup", type=Path)
