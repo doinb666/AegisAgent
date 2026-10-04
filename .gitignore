@@ -9,5 +9,6 @@ data/
 uploads/
 build/
 dist/
+node_modules/
 *.spec
 *.egg-info/

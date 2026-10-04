@@ -1,9 +1,11 @@
 "use strict";
 
+import WorkspaceOptions from "./workspace-options";
+
 // 展示层只创建安全文本节点，不解释模型或文件返回的 HTML。
-window.WorkspaceUI = (() => {
-  const byId = id => document.getElementById(id);
-  const node = (tag, text = "", className = "") => {
+const WorkspaceUI = (() => {
+  const byId = (id: string): any => document.getElementById(id);
+  const node = (tag: string, text = "", className = ""): any => {
     const element = document.createElement(tag);
     element.textContent = text;
     if (className) element.className = className;
@@ -58,7 +60,7 @@ window.WorkspaceUI = (() => {
     const models = cap.models || [], tools = cap.tools || [];
     const roles = {admin: "管理员", operator: "操作员", viewer: "只读成员"};
     const rows = [
-      ["模型", models.join("、") || "未配置。请管理员在服务端设置模型环境变量，再重启服务。"],
+      ["模型来源", (cap.model_routes || []).map(route=>`${route.label} · ${route.model} (${route.provider})`).join("；") || models.join("、") || "未配置。可在下方生成配置示例，再由管理员写入环境变量并重启服务。"],
       ["工具", tools.join("、") || "未配置工具"],
       ["执行沙箱", cap.sandbox ? "已配置，代码执行仍需审批；连通状态未验证。" : "未配置，代码执行将被拒绝。"],
       ["当前角色", roles[cap.role] || cap.role || "未提供"],
@@ -127,5 +129,16 @@ window.WorkspaceUI = (() => {
     details.append(node("summary", "查看完整事件证据"), evidence); row.append(details);
     return row;
   }
-  return Object.freeze({node, setInspector, requestError, renderCapabilities, renderOverview, clearFiles, loadFiles, eventRow});
+  const configureCollaboration = (...args: any[]) => (
+    WorkspaceOptions.configureCollaboration as (...values: any[]) => any
+  )(...args);
+  const clearCollaboration = () => WorkspaceOptions.clearCollaboration();
+  const renderCollaboration = (...args: any[]) => (
+    WorkspaceOptions.renderCollaboration as (...values: any[]) => any
+  )(...args);
+  return Object.freeze({node, setInspector, requestError, renderCapabilities, renderOverview, clearFiles, loadFiles, eventRow, configureCollaboration, clearCollaboration, renderCollaboration});
 })();
+
+window.WorkspaceUI = WorkspaceUI;
+
+export default WorkspaceUI;

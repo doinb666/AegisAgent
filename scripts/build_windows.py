@@ -1,5 +1,6 @@
 """构建便携目录、ZIP 与包含便携目录的 Windows 安装器。"""
 
+import argparse
 import os
 import shutil
 import subprocess
@@ -12,6 +13,10 @@ ROOT = Path(__file__).resolve().parents[1]
 def build():
     if sys.platform != "win32":
         raise SystemExit("Windows EXE 必须在 Windows 构建")
+    npm = shutil.which("npm.cmd")
+    if not npm:
+        raise SystemExit("构建 Windows 发布包需要 Node.js 与 npm")
+    subprocess.run([npm, "run", "frontend:verify"], cwd=ROOT, check=True)
     import tiktoken
 
     tokenizer_cache = ROOT / "build/tokenizer-cache"
@@ -90,4 +95,5 @@ def build():
 
 
 if __name__ == "__main__":
+    argparse.ArgumentParser(description=__doc__).parse_args()
     build()

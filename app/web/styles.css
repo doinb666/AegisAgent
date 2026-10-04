@@ -165,6 +165,20 @@ kbd { font-size: 10px; font-family: inherit; color: var(--muted); border: 1px so
 .skill-toolbar>div { min-width: 0; }
 .skill-toolbar label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 8px; }
 .skill-toolbar button { flex-shrink: 0; }
+.task-options { border-top: 1px solid var(--line); margin-top: 12px; }
+.task-options summary { font-size: 12px; color: var(--muted); padding: 10px 0; }
+.task-options-grid, .provider-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 12px 20px; }
+.task-options label { display: block; font-size: 12px; margin: 6px 0; }
+.task-options select { width: 100%; max-width: 100%; border: 1px solid var(--line); }
+.task-options p { font-size: 12px; margin: 10px 0 0; }
+.settings-view #provider-form { max-width: 760px; }
+.provider-grid input, .provider-grid select { width: 100%; min-width: 0; }
+.collaboration-nodes { list-style: none; padding: 0; }
+.collaboration-nodes li { border-bottom: 1px solid var(--line); padding: 14px 0; overflow-wrap: anywhere; }
+.collaboration-nodes strong { display: block; margin-bottom: 8px; }
+.collaboration-nodes p { font-size: 12px; margin: 8px 0; }
+.collaboration-nodes button { font-size: 12px; margin-top: 4px; }
+@media (max-width: 700px) { .task-options-grid, .provider-grid { grid-template-columns: minmax(0,1fr); } }
 @media (min-width: 1700px) {
   .shell { grid-template-columns: 300px minmax(0,1fr) 340px; }
   .shell.inspector-collapsed { grid-template-columns: 300px minmax(0,1fr); }

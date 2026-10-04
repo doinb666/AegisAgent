@@ -1,5 +1,6 @@
 """在临时源码副本构建 wheel，避免历史 build/lib 重新带入已删除模块。"""
 
+import argparse
 import shutil
 import subprocess
 import sys
@@ -12,6 +13,10 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def build():
+    npm = shutil.which("npm.cmd" if sys.platform == "win32" else "npm")
+    if not npm:
+        raise SystemExit("构建 wheel 需要 Node.js 与 npm，以验证 TypeScript 静态产物")
+    subprocess.run([npm, "run", "frontend:verify"], cwd=ROOT, check=True)
     metadata = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
     project = metadata["project"]
     filename = f"{project['name'].replace('-', '_')}-{project['version']}-py3-none-any.whl"
@@ -47,4 +52,5 @@ def build():
 
 
 if __name__ == "__main__":
+    argparse.ArgumentParser(description=__doc__).parse_args()
     build()

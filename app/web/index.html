@@ -4,8 +4,7 @@
   <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
   <title>AegisCode · 你的任务工作台</title>
   <link rel="stylesheet" href="/static/styles.css">
-  <script src="/static/workspace-ui.js" defer></script>
-  <script src="/static/app.js" defer></script>
+  <script src="/static/app.js" type="module"></script>
 </head>
 <body>
   <svg class="icon-sprite" aria-hidden="true" xmlns="http://www.w3.org/2000/svg"><defs>
@@ -71,6 +70,10 @@
             <label for="model" class="sr-only">模型</label><select id="model"><option value="">自动选择模型</option></select></div>
             <button id="send" class="primary" type="submit">开始任务 <svg class="icon" aria-hidden="true"><use href="#icon-arrow"/></svg></button></div>
           <p class="composer-hint">Enter 换行 · Ctrl Enter 发送 · 外部工具内容仅作为证据</p>
+          <details class="task-options"><summary>代码工作区与协作</summary><div class="task-options-grid">
+            <div><label for="collaboration-mode">协作默认方式</label><select id="collaboration-mode"><option value="team">Agent Team · 独立分析</option><option value="fork">Fork · 继承会话背景</option></select></div>
+            <div><label for="project-mode">代码准备方式</label><select id="project-mode"><option value="">不准备代码目录</option><option value="fork">Fork · 仓库代码副本</option><option value="worktree">Worktree · 独立 Git 工作区</option></select></div>
+          </div><p id="collaboration-hint" class="muted">子任务最多两个，只读且由主控汇总。准备代码目录需批准。</p></details>
         </form>
       </section>
       <section id="assets-view" class="view assets-view" hidden>
@@ -97,6 +100,19 @@
         <div id="asset-list" class="asset-list"></div>
       </section>
       <section id="settings-view" class="view settings-view" hidden><h3>当前能力</h3><p class="muted">按服务端配置展示。配置存在不代表连接健康或任务已验证。</p><dl id="capability-list" class="capability-list"></dl><details class="capability-evidence"><summary>查看完整配置证据</summary><pre id="capabilities"></pre></details>
+        <details id="model-config-builder"><summary>接入自己的模型服务</summary><p class="muted">生成配置示例后，由管理员写入服务端 .env 并重启。这里只填写密钥环境变量名，不填写密钥。</p>
+          <form id="provider-form"><div class="provider-grid">
+            <div><label for="provider-kind">接口协议</label><select id="provider-kind"><option value="custom">自定义 OpenAI 兼容</option><option value="openai">OpenAI</option><option value="anthropic">Anthropic 原生</option><option value="azure">Azure OpenAI</option><option value="ollama">本地 Ollama</option></select></div>
+            <div><label for="provider-label">来源名称</label><input id="provider-label" maxlength="80" placeholder="例如主服务 / 本机"></div>
+            <div><label for="provider-model">模型 / Azure 部署名</label><input id="provider-model" required maxlength="128" placeholder="填写实际可用名称"></div>
+            <div><label for="provider-key-env">密钥环境变量名</label><input id="provider-key-env" required pattern="[A-Za-z_][A-Za-z0-9_]*" placeholder="PRIMARY_MODEL_KEY" aria-describedby="provider-key-hint"><p id="provider-key-hint" class="muted">凭证由服务器读取，不会显示在模型列表中。</p></div>
+            <div><label for="provider-base">基础地址</label><input id="provider-base" type="url" maxlength="2048" placeholder="https://your-service.example/v1"></div>
+            <div id="provider-version-row" hidden><label for="provider-version">Azure API 版本</label><input id="provider-version" maxlength="80" placeholder="2024-10-21"></div>
+            <div><label for="provider-priority">优先级（小值优先）</label><input id="provider-priority" type="number" min="0" max="1000" value="0" required></div>
+          </div><p id="provider-error" class="error" role="alert"></p><button id="provider-add" type="submit" class="primary">添加到配置示例</button><button id="provider-clear" type="button">清空示例</button></form>
+          <pre id="model-config-preview" tabindex="0" aria-label="服务端模型配置示例">尚未生成配置。已有服务配置不会被这里修改。</pre>
+          <p class="muted">支持按来源选择，失败后尝试其他模型。生成示例不代表连接已验证；所选模型需支持工具调用。</p>
+        </details>
         <details><summary>企业成员管理</summary><form id="member-form"><label for="member-name">成员账号</label><input id="member-name" required><label for="member-password">初始密码</label><input id="member-password" type="password" minlength="8" required><label for="member-role">角色</label><select id="member-role"><option value="operator">操作员</option><option value="viewer">只读成员</option></select><button class="primary">创建成员</button></form></details></section>
       <p id="notice" class="notice" role="status" aria-live="polite"></p>
     </main>
@@ -104,6 +120,7 @@
       <div id="run-status" class="run-status">尚未开始任务</div><div id="run-meta" class="run-meta"></div>
       <div id="approval" class="approval" hidden><h4>需要你的批准</h4><p>请核对工具及完整参数。批准仅对本次操作有效。</p><pre id="approval-data"></pre><button id="approve" class="primary">批准这次操作</button><button id="reject" class="danger">拒绝</button></div>
       <button id="cancel" class="secondary" hidden>停止任务</button>
+      <section id="collaboration-review" class="collaboration-review" aria-labelledby="collaboration-heading" hidden><div class="section-caption"><h4 id="collaboration-heading">协作与独立验收</h4></div><p class="muted">验收核对工具账本与执行契约，主控仍需审查结论。</p><ol id="collaboration-nodes" class="collaboration-nodes"></ol></section>
       <div id="feedback" class="feedback" hidden><h4>任务是否达到目标？</h4><button id="success">已解决</button><button id="failure">仍有问题</button><p class="muted">反馈用于验证经验，候选能力可在 Skills 中管理。</p></div>
       <div class="section-caption">执行记录</div><ol id="timeline" class="timeline"></ol>
       <section class="file-review" aria-labelledby="files-heading"><div class="section-caption"><h4 id="files-heading">任务文件</h4><button id="files-refresh" aria-label="刷新任务文件"><svg class="icon" aria-hidden="true"><use href="#icon-refresh"/></svg></button></div><p class="muted">只读预览本人任务文件，最多读取 64 KiB。</p><div id="file-list" class="file-list" aria-live="polite">打开任务后可查看文件。</div><pre id="file-preview" class="file-preview" tabindex="0" aria-label="文件内容预览" hidden></pre></section>
