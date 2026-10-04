@@ -60,3 +60,16 @@
 更新三分钟介绍为约 852 字（含标点及段间空白），保留 30 道题目及每题的精简回答和 STAR 四项，补充本轮可复核的读取微基准及真实 PG 负载限制。使用 resume-builder 的量化与 JD 匹配原则，不沿用没有原始证据的历史指标。
 
 构建有 setuptools 许可证字段弃用提示，以及 PyInstaller 对可选数据库驱动和 tzdata 的缺失提示；当前 SQLite/PG 与安装启动验收通过。未宣称所有可选时区和数据库驱动均可用。
+
+## 发布
+
+Release [v0.2.5](https://github.com/doinb666/AegisAgent/releases/tag/v0.2.5) 已公开，五项资产大小及 GitHub 服务端 SHA256 digest 与本地一致。安装资产构建提交为 `32a9562`，发布目标与源码 ZIP 为 `e37998a`，两者 app 子树相同（`ba1fb59bc718ff48afce28afefd6cfec8bdbe908`）。README 的最新下载入口在发布后更新。
+
+| 资产 | 字节数 | SHA256 |
+|---|---:|---|
+| aegiscode-0.2.5-py3-none-any.whl | 138534 | 49e28623716fa867409608a6d7229350e903aaca58b938b1552361b310bacb9b |
+| AegisCode-portable.zip | 34969947 | 2fb216929675004ac22b5ea0dffc3468a25249ea3b4d1c9a2bbbad0e15c04d95 |
+| AegisCode-Setup.exe | 46138338 | 088f16ad3a0343d72fae33cc0f0e98df028b0fbdddeae1d0cb7463f5b10a97b3 |
+| AegisCode-source-v0.2.5.zip | 6099204 | 5e7e3e3ba9c24411839318b439a98a0edb58ec54a8cb5f1adac854e6d0fc8ee1 |
+
+发布目录：`dist/releases/v0.2.5/`。本轮完成读取优化、编码展示、导航交互、文档、浏览器/真实基础设施验收与新安装器发布；任务计划中明确排除的能力及旧正式进程重启仍未完成，不能将本阶段完成理解为全部研究路线或 Codex 能力完成。
