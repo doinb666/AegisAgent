@@ -4,6 +4,7 @@ import WorkspaceUI from "./workspace-ui";
 import { initializeNavigation } from "./navigation";
 import { createMessage } from "./reply-view";
 import { createThreadHistory } from "./thread-view";
+import { initializeProjectThreads, type Thread } from "./project-threads";
 
 const $ = (id: string): any => document.getElementById(id);
 const apiRoot = "/api/v1";
@@ -16,6 +17,18 @@ const kinds = {profile:"偏好",preference:"偏好",constraint:"约束",memory:"
 const assetStates = {draft:"候选",active:"已启用",retired:"已退役"};
 function notice(text) { $("notice").textContent = text; }
 const canWrite = () => state.user && state.user.role !== "viewer";
+const projectThreads = initializeProjectThreads({
+  api, identity: () => state.token, canWrite, select: selectThread, notice,
+  changed: thread => {
+    $("send").disabled = state.runLoading || thread?.archived === true;
+    $("send").title = thread?.archived ? "先恢复归档会话才能继续" : "";
+  },
+});
+async function selectThread(thread: Thread): Promise<void> {
+  if(thread.latest_run_id) { await openRun(thread.latest_run_id); return; }
+  newTask(); state.threadId=thread.id;state.session=thread.session_id;
+  projectThreads.show(thread);
+}
 function contextCurrent() {
   const token = state.token, generation = state.generation, viewGeneration = state.viewGeneration;
   return () => token === state.token && generation === state.generation && viewGeneration === state.viewGeneration;
@@ -25,9 +38,9 @@ function runCurrent(id, generation, token) {
 }
 function setRunLoading(loading) {
   state.runLoading=loading;
-  $("send").disabled=loading;
+  $("send").disabled=loading || projectThreads.isArchived();
   $("chat-view").setAttribute("aria-busy",String(loading));
-  $("send").title=loading ? "正在读取任务，完成后可继续" : "";
+  $("send").title=loading ? "正在读取任务，完成后可继续" : projectThreads.isArchived() ? "先恢复归档会话才能继续" : "";
 }
 async function api(path: string, options: any = {}) {
   const requestToken=state.token;
@@ -50,9 +63,10 @@ async function guard(action, button=null) {
   const valid=contextCurrent();
   if (button) button.disabled = true;
   try { await action(); } catch(error) { if(valid()) notice(error.message); }
-  finally { if (button && token===state.token) button.disabled = button.id==="send" && state.runLoading; }
+  finally { if (button && token===state.token) button.disabled = button.id==="send" && (state.runLoading || projectThreads.isArchived()); }
 }
 function resetLogin() {
+  projectThreads.clear();
   navigation.close();
   clearTimeout(searchTimer);
   state.generation++; state.stream?.abort(); state.user=null; state.token=null;
@@ -92,6 +106,7 @@ async function enter(user) {
   else cap.models.forEach(m=>$("model").add(new Option(m,m)));
   WorkspaceUI.renderCapabilities(cap);
   WorkspaceUI.configureCollaboration(cap,canWrite());
+  projectThreads.configure(cap);
   $("member-form").closest("details").hidden=cap.role!=="admin";
   const bootstrap=await api("/auth/me");
   if(token!==state.token)return;
@@ -166,6 +181,7 @@ function message(role,text) {
 }
 function renderRun(run) {
   state.run=run; state.session=run.session_id;
+  state.threadId=run.thread_id || null;
   $("run-status").textContent=statuses[run.status] || run.status;
   $("run-status").dataset.status=run.status;
   const route=state.modelRoutes.find(item=>item.id===run.model);
@@ -182,6 +198,7 @@ function renderRun(run) {
 }
 async function openRun(id) {
   state.generation++; state.stream?.abort(); state.cursor=0; $("timeline").replaceChildren();
+  projectThreads.show(null);
   WorkspaceUI.clearFiles(); state.run=null;state.session=null;
   WorkspaceUI.clearCollaboration();
   showView("chat");$("conversation").replaceChildren();
@@ -196,7 +213,13 @@ async function openRun(id) {
     $("conversation").prepend(createThreadHistory(
       id, api, () => runCurrent(id,generation,token), statuses,
     ));
+    if(projectThreads.enabled()) {
+      try { await projectThreads.forRun(run.thread_id || null,()=>runCurrent(id,generation,token)); }
+      catch(error) { if(valid())notice(`会话信息暂不可用：${error.message}`); }
+      if(!valid())return;
+    }
     sessionStorage.setItem("aegis-last-run",id);renderRuns();
+    void projectThreads.refresh();
     watch(id,generation,token);loadRunFiles();
     return true;
   } catch(error) {
@@ -248,6 +271,7 @@ async function watch(id,generation,token) {
   }
 }
 function newTask() {
+  state.threadId=null;projectThreads.show(null);
   state.generation++; state.stream?.abort(); state.run=null; state.session=null; state.cursor=0;
   setRunLoading(false);
   WorkspaceUI.clearFiles();sessionStorage.removeItem("aegis-last-run");$("message").value="";$("approval-data").textContent="";
@@ -278,10 +302,10 @@ $("conversation").addEventListener("click",event=>{
   if(button) { $("message").value=button.dataset.prompt;$("message").focus(); }
 });
 $("composer").addEventListener("submit", event=>{
-  event.preventDefault();if(state.runLoading)return;
+  event.preventDefault();if(state.runLoading || projectThreads.isArchived())return;
   guard(async()=>{
     const valid=contextCurrent();
-    const body=JSON.stringify({message:$("message").value,session_id:state.session,mode:$("mode").value,model:$("model").value || null,collaboration_mode:canWrite()?$("collaboration-mode").value:null,project_mode:canWrite()?($("project-mode").value || null):null});
+    const body=JSON.stringify({message:$("message").value,session_id:state.session,mode:$("mode").value,model:$("model").value || null,collaboration_mode:canWrite()?$("collaboration-mode").value:null,project_mode:canWrite()?($("project-mode").value || null):null,...(projectThreads.enabled()?{thread_id:state.threadId || null}:{})});
     if(!state.pendingRequest || state.pendingRequest.body!==body) state.pendingRequest={body,key:crypto.randomUUID()};
     sessionStorage.setItem("aegis-pending-request",JSON.stringify(state.pendingRequest));
     const run=await api("/runs",{method:"POST",headers:{"Idempotency-Key":state.pendingRequest.key},body});
@@ -370,7 +394,12 @@ function renderAssets() {
     if(asset.kind==="skill") appendSkillControls(row,asset);
     if(asset.metadata.source_run_id) {const source=document.createElement("button");source.textContent="查看来源任务";source.onclick=()=>guard(()=>openRun(asset.metadata.source_run_id));row.append(source);}
     if(asset.kind==="project") {
-      const use=document.createElement("button");use.textContent="在此项目开始任务";use.onclick=()=>{newTask();state.session=asset.id;$("message").value=`项目：${asset.name}\n约束：${asset.content}\n任务：`;};row.append(use);
+      const use=document.createElement("button");use.textContent=projectThreads.enabled()?"新建项目会话":"在此项目开始任务";
+      use.disabled=projectThreads.enabled() && (!canWrite() || asset.status!=="active");
+      use.onclick=()=>guard(async()=>{
+        if(projectThreads.enabled())await projectThreads.create(asset);
+        else {newTask();state.session=asset.id;$("message").value=`项目：${asset.name}\n约束：${asset.content}\n任务：`;}
+      },use);row.append(use);
     }
     for(const [label,next] of [["启用","active"],["退役","retired"]]) {
       if(!canWrite() || asset.status===next || asset.kind==="document") continue;

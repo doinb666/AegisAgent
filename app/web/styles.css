@@ -57,7 +57,7 @@ summary { cursor: pointer; padding: 12px 0; min-height: 44px; }
 .error { color: var(--error); min-height: 22px; font-size: 12px; }
 .shell { display: grid; grid-template-columns: 280px minmax(0,1fr) 312px; min-height: 100dvh; }
 .shell.inspector-collapsed { grid-template-columns: 280px minmax(0,1fr); }
-.sidebar { background: var(--rail); padding: 27px 16px 16px; display: flex; flex-direction: column; position: sticky; top: 0; height: 100dvh; border-right: 1px solid var(--line); min-width: 0; }
+.sidebar { background: var(--rail); padding: 27px 16px 16px; display: flex; flex-direction: column; position: sticky; top: 0; height: 100dvh; border-right: 1px solid var(--line); min-width: 0; overflow-y: auto; }
 .sidebar .wordmark { margin: 0 10px 29px; }
 .new-task { display: flex; align-items: center; justify-content: space-between; margin-bottom: 22px; background: var(--paper); }
 .new-task>span { display: flex; align-items: center; gap: 8px; }
@@ -68,7 +68,7 @@ kbd { font-size: 10px; font-family: inherit; color: var(--muted); border: 1px so
 .section-caption button { background: none; border: 0; width: 44px; padding: 10px; }
 .run-controls { display: grid; gap: 8px; margin: 0 0 10px; }
 .run-controls input, .run-controls select { background: transparent; font-size: 12px; padding: 10px 12px; }
-.run-list { overflow: auto; flex: 1; min-height: 0; }
+.run-list { overflow: auto; flex: 1 0 140px; min-height: 140px; }
 .run-item { width: 100%; text-align: left; border: 1px solid transparent; background: transparent; padding: 10px 11px; margin-bottom: 3px; font-size: 12px; min-height: 61px; }
 .run-item .run-title { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .run-item small { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 11px; margin-top: 6px; }
@@ -79,6 +79,20 @@ kbd { font-size: 10px; font-family: inherit; color: var(--muted); border: 1px so
 .run-item.current { background: var(--paper); border-color: var(--line); }
 .runs-more { font-size: 12px; margin: 8px 0; background: transparent; }
 .sidebar-footer { padding-top: 12px; margin-top: 14px; border-top: 1px solid var(--line); font-size: 12px; }
+.project-thread-navigation { max-height: 34dvh; overflow: auto; flex-shrink: 0; }
+.project-thread-navigation .section-caption { margin-top: 10px; }
+.project-thread-group summary { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 13px; }
+.project-thread-group>button, .project-thread-navigation>button { font-size: 12px; background: transparent; }
+.project-thread-items { padding-left: 12px; }
+.thread-item { display: block; width: 100%; min-height: 44px; padding: 10px 12px; text-align: left; border: 0; background: transparent; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 12px; }
+.thread-item:hover { background: var(--raised); }
+.thread-list-caption { display: flex; justify-content: space-between; align-items: center; color: var(--muted); font-size: 12px; margin-top: 10px; }
+.thread-list-caption button { font-size: 11px; background: transparent; border: 0; }
+.thread-context { margin: 0 32px; padding: 10px 16px; background: var(--rail); border: 1px solid var(--line); border-radius: 12px; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
+.thread-context strong { display: block; font-size: 13px; overflow-wrap: anywhere; }
+.thread-context button { font-size: 12px; background: transparent; padding: 8px; }
+.thread-context form { flex-basis: 100%; }
+.thread-context input { margin: 8px 0; }
 .sidebar-footer button { border: 0; background: none; padding-left: 0; color: var(--muted); }
 .account { padding: 6px 0; font-weight: 600; overflow-wrap: anywhere; }
 .main { position: relative; min-width: 0; display: flex; flex-direction: column; height: 100dvh; background: var(--paper); }
