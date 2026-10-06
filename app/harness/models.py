@@ -1,6 +1,6 @@
 """独立元数据，避免与旧应用表耦合。"""
 
-from sqlalchemy import JSON, Float, Integer, String, Text, UniqueConstraint
+from sqlalchemy import JSON, Boolean, Float, Index, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -107,3 +107,44 @@ class Feedback(Base):
     run_id: Mapped[str] = mapped_column(String(36), index=True)
     success: Mapped[bool] = mapped_column()
     note: Mapped[str] = mapped_column(Text)
+
+
+class Thread(Base):
+    __tablename__ = "harness_threads"
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "owner_id", "session_id"),
+        UniqueConstraint("tenant_id", "owner_id", "request_key"),
+        Index(
+            "ix_thread_owner_project_page",
+            "tenant_id",
+            "owner_id",
+            "archived",
+            "project_asset_id",
+            "created",
+            "id",
+        ),
+    )
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(String(36))
+    owner_id: Mapped[str] = mapped_column(String(36))
+    session_id: Mapped[str] = mapped_column(String(128))
+    project_asset_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    title: Mapped[str] = mapped_column(String(200))
+    archived: Mapped[bool] = mapped_column(Boolean, default=False)
+    created: Mapped[float] = mapped_column(Float)
+    request_key: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    request_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+
+
+class ThreadRun(Base):
+    __tablename__ = "harness_thread_runs"
+    __table_args__ = (Index("ix_thread_run_owner", "tenant_id", "owner_id", "thread_id"),)
+    run_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    thread_id: Mapped[str] = mapped_column(String(36))
+    tenant_id: Mapped[str] = mapped_column(String(36))
+    owner_id: Mapped[str] = mapped_column(String(36))
+
+
+RUN_SESSION_INDEX = Index(
+    "ix_run_owner_session_page", Run.tenant_id, Run.owner_id, Run.session_id, Run.created, Run.id
+)

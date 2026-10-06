@@ -1,5 +1,7 @@
 """历史问答分页：共享会话 ID 不能突破账号范围，子任务独立展示。"""
 
+import asyncio
+
 import pytest
 from sqlalchemy import event
 
@@ -73,6 +75,10 @@ async def test_owner_scope_child_isolation_and_cursor_validation(inspection):
 @pytest.mark.asyncio
 async def test_thread_projection_excludes_internal_context(inspection):
     env = inspection
+    # SQL捕获只检查接口投影，后台队列领取有自己的上下文读取职责。
+    for worker in env.service.workers:
+        worker.task.cancel()
+    await asyncio.gather(*(worker.task for worker in env.service.workers), return_exceptions=True)
     await seed_run(env, "projection")
     await set_session(env, ["projection"])
     statements = []

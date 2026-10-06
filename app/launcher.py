@@ -71,6 +71,11 @@ def open_when_started(
 
 
 def main() -> None:
+    if "--migrate-threads" in sys.argv:
+        from app.harness.thread_migration import main as migration_main
+
+        migration_main([argument for argument in sys.argv[1:] if argument != "--migrate-threads"])
+        return
     if "--etl-worker" in sys.argv:
         if getattr(sys, "frozen", False):
             os.environ.setdefault("TIKTOKEN_CACHE_DIR", str(Path(sys._MEIPASS) / "tokenizer-cache"))

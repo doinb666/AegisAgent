@@ -5,12 +5,12 @@ import time
 from contextlib import asynccontextmanager
 from uuid import uuid4
 
-from sqlalchemy import event, select, text, update
+from sqlalchemy import event, inspect, select, text, update
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.orm import aliased
 
 from .errors import HarnessError
-from .models import Base, Event, Run, ToolCall
+from .models import Base, Event, Run, Thread, ThreadRun, ToolCall
 
 ACTIVE_STATUSES = ("queued", "running", "waiting_approval")
 TERMINAL_STATUSES = ("completed", "failed", "cancelled", "interrupted")
@@ -43,6 +43,7 @@ def run_dict(run):
         **{key: getattr(run, key) for key in RUN_PUBLIC_FIELDS},
         "collaboration_mode": run.config.get("collaboration_mode"),
         "project_mode": run.config.get("project_mode"),
+        "thread_id": run.config.get("thread_id"),
     }
 
 
@@ -64,6 +65,7 @@ class Store:
         self.engine = create_async_engine(settings.resolved_database_url(), pool_pre_ping=True)
         self.sessions = async_sessionmaker(self.engine, expire_on_commit=False)
         self.write_lock = asyncio.Lock()
+        self.threads_ready = False
         if self.engine.dialect.name == "sqlite":
 
             @event.listens_for(self.engine.sync_engine, "connect")
@@ -74,9 +76,22 @@ class Store:
                 cursor.close()
 
     async def initialize(self):
-        if self.settings.auto_create_schema:
-            async with self.engine.begin() as connection:
-                await connection.run_sync(Base.metadata.create_all)
+        async with self.engine.begin() as connection:
+            tables = await connection.run_sync(lambda sync: set(inspect(sync).get_table_names()))
+            if self.settings.auto_create_schema:
+                deferred = {Thread.__tablename__, ThreadRun.__tablename__}
+                selected = [
+                    table
+                    for table in Base.metadata.sorted_tables
+                    if "harness_runs" not in tables or table.name not in deferred
+                ]
+                await connection.run_sync(
+                    lambda sync: Base.metadata.create_all(sync, tables=selected)
+                )
+                tables = await connection.run_sync(
+                    lambda sync: set(inspect(sync).get_table_names())
+                )
+            self.threads_ready = {Thread.__tablename__, ThreadRun.__tablename__} <= tables
 
     @asynccontextmanager
     async def transaction(self, existing=None):

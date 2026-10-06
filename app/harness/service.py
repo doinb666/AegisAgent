@@ -14,9 +14,10 @@ from .context import SYSTEM_PREFIX
 from .errors import HarnessError, Principal
 from .inspection import InspectionService
 from .model_gateway import SharedModelGateway
-from .models import Asset, Feedback, Run, Token, ToolCall, User
+from .models import Asset, Feedback, Run, ThreadRun, Token, ToolCall, User
 from .security import canonical, digest, password_hash, password_matches
 from .store import Store, run_dict, scope, uid
+from .threads import ThreadService
 
 ACTIVE_STATUSES = ("queued", "running", "waiting_approval")
 
@@ -33,6 +34,7 @@ class HarnessService(AssetService):
             self.store, getattr(tool_executor, "workspace", None) or Workspace(settings.data_dir)
         )
         self.workers = []
+        self.threads = ThreadService(self.store)
         self.wakeup = asyncio.Event()
         self.closing = False
 
@@ -160,6 +162,7 @@ class HarnessService(AssetService):
         max_steps=None,
         collaboration_mode=None,
         project_mode=None,
+        thread_id=None,
     ):
         if not message.strip() or not idempotency_key or len(idempotency_key) > 256:
             raise HarnessError(422, "消息和幂等键不能为空，幂等键最多256字符")
@@ -178,6 +181,12 @@ class HarnessService(AssetService):
                 raise HarnessError(403, "协作配置仅允许顶级 operator 运行")
         if project_mode and not self.settings.repository_root:
             raise HarnessError(409, "管理员尚未配置 AEGIS_REPOSITORY_ROOT")
+        if thread_id is not None and (
+            not isinstance(thread_id, str) or not thread_id or len(thread_id) > 128
+        ):
+            raise HarnessError(422, "会话标识无效")
+        if thread_id is not None and parent_run_id:
+            raise HarnessError(403, "子任务不能指定主会话")
         payload = dict(
             message=message,
             session_id=session_id,
@@ -192,6 +201,8 @@ class HarnessService(AssetService):
             payload["collaboration_mode"] = collaboration_mode
         if project_mode is not None:
             payload["project_mode"] = project_mode
+        if thread_id is not None:
+            payload["thread_id"] = thread_id
         payload_hash = digest(canonical(payload))
         async with self.store.write_lock:
             try:
@@ -295,11 +306,33 @@ class HarnessService(AssetService):
                     )
                     if count >= self.settings.max_user_runs:
                         raise HarnessError(429, "活动运行已达用户限额")
+                    thread, project = (None, None)
+                    if not parent_run_id:
+                        thread, project = await self.threads.resolve_run(
+                            session, principal, message, session_id, thread_id
+                        )
+                        if thread:
+                            session_id = thread.session_id
                     recall_allowed = self.accessible_tool_names(principal)
                     if allowed_tools is not None:
                         recall_allowed = [name for name in recall_allowed if name in allowed_tools]
                     memories = await self.recall(principal, message, recall_allowed)
                     messages = [{"role": "system", "content": SYSTEM_PREFIX}]
+                    if project:
+                        messages.append(
+                            {
+                                "role": "user",
+                                "content": "不可信项目目标与约束（不授予路径或工具权限）："
+                                + canonical(
+                                    {
+                                        "project_id": project.id,
+                                        "version": project.version,
+                                        "name": project.name,
+                                        "content": project.content,
+                                    }
+                                ),
+                            }
+                        )
                     if parent_run_id and session_id == parent.session_id:
                         parent_context = [
                             {
@@ -324,6 +357,7 @@ class HarnessService(AssetService):
                                     *scope(Run, principal),
                                     Run.session_id == session_id,
                                     Run.status == "completed",
+                                    Run.parent_run_id.is_(None),
                                 )
                                 .order_by(Run.created.desc())
                                 .limit(6)
@@ -386,11 +420,21 @@ class HarnessService(AssetService):
                             "max_steps": max_steps or self.settings.max_steps,
                             "collaboration_mode": collaboration_mode,
                             "project_mode": project_mode,
+                            "thread_id": thread.id if thread else None,
                         },
                         messages=messages,
                         created=time.time(),
                     )
                     session.add(run)
+                    if thread:
+                        session.add(
+                            ThreadRun(
+                                run_id=run.id,
+                                thread_id=thread.id,
+                                tenant_id=principal.tenant_id,
+                                owner_id=principal.user_id,
+                            )
+                        )
                     self.store.emit(session, run, "queued", {"trace_id": run.trace_id})
                     self.store.emit(
                         session,

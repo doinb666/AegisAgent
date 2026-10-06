@@ -41,6 +41,7 @@ class RunInput(BaseModel):
 
     message: str = Field(min_length=1, max_length=16000)
     session_id: str | None = Field(default=None, max_length=128)
+    thread_id: str | None = Field(default=None, min_length=1, max_length=128)
     mode: Literal["react", "plan", "reflection"] = "react"
     model: str | None = Field(default=None, max_length=128)
     collaboration_mode: Literal["fork", "team"] | None = None
@@ -139,6 +140,7 @@ async def capabilities(request: Request, principal=Depends(identity)):
         "sandbox": bool(harness.settings.sandbox_url),
         "role": principal.role,
         "max_steps": harness.settings.max_steps,
+        "threads": {"enabled": harness.store.threads_ready},
     }
 
 
