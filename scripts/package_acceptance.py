@@ -57,6 +57,59 @@ def verify_session(client, prepare):
     assert details["collaboration"]["max_children"] == 2
     assert details["collaboration"]["project_modes"] == [], "未绑定仓库时应隐藏 Git 模式"
     assert details["model_protocols"] == ["openai", "custom", "anthropic", "azure", "ollama"]
+    assert details["threads"]["enabled"] and details["notifications"]["enabled"]
+    if prepare:
+        project = client.post(
+            "/api/v1/assets",
+            headers=headers,
+            json={
+                "kind": "project",
+                "name": "安装包项目",
+                "content": "只做确定性安装验收",
+                "status": "active",
+            },
+        )
+        assert project.status_code == 201
+        for title in ("参数边界", "并发恢复"):
+            response = client.post(
+                "/api/v1/threads",
+                headers=headers,
+                json={
+                    "title": title,
+                    "project_id": project.json()["id"],
+                },
+            )
+            assert response.status_code == 201
+    threads = client.get("/api/v1/threads", headers=headers).json()
+    assert {thread["title"] for thread in threads} == {"参数边界", "并发恢复"}
+    assert len({thread["session_id"] for thread in threads}) == 2
+    if prepare:
+        response = client.post(
+            "/api/v1/runs",
+            headers={**headers, "Idempotency-Key": "package-failure"},
+            json={
+                "message": "未配置模型时应明确失败",
+                "thread_id": threads[0]["id"],
+            },
+        )
+        assert response.status_code == 202
+        deadline = time.monotonic() + 20
+        while True:
+            run = client.get("/api/v1/runs/" + response.json()["id"], headers=headers).json()
+            if run["status"] == "failed":
+                break
+            assert time.monotonic() < deadline, "缺模型任务未明确失败"
+            time.sleep(0.1)
+    notifications = client.get("/api/v1/notifications", headers=headers).json()
+    assert len(notifications) == 1 and notifications[0]["type"] == "failed"
+    if prepare:
+        assert (
+            client.post(
+                f"/api/v1/notifications/{notifications[0]['id']}/read", headers=headers
+            ).status_code
+            == 200
+        )
+    assert client.get("/api/v1/notifications/unread", headers=headers).json()["count"] == 0
 
 
 def main():
@@ -112,6 +165,15 @@ def main():
                 timeout=120,
             )
             command = [str(target / "AegisCode.exe")]
+        for marker in ("--migrate-threads", "--migrate-notifications"):
+            subprocess.run(
+                [*command, marker, "--help"],
+                cwd=root,
+                env=environment,
+                capture_output=True,
+                check=True,
+                timeout=30,
+            )
         command += ["--no-browser", "--port", str(args.port), "--data-dir", str(root / "data")]
         with httpx.Client(base_url=f"http://127.0.0.1:{args.port}", timeout=5) as client:
             for prepare in (True, False):
@@ -147,7 +209,9 @@ def main():
                             else:
                                 process.terminate()
                         process.wait(timeout=30)
-            print("安装包验收通过：独立中文目录、静态校验、登录、能力接口、重启后偏好保留")
+            print(
+                "安装包验收通过：独立中文目录、静态校验、登录、项目多会话、失败通知、已读持久化、迁移入口、重启后偏好保留"
+            )
 
 
 if __name__ == "__main__":
