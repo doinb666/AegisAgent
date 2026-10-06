@@ -85,20 +85,7 @@ async def migrate_threads(settings, apply=False, backup_path=None):
         }
         if not apply:
             return result
-        if backup_path is None:
-            raise ValueError("执行迁移必须提供新的SQLite备份路径，或已完成的PostgreSQL备份文件")
-        backup_path = Path(backup_path).resolve()
-        if store.engine.dialect.name == "sqlite":
-            await asyncio.to_thread(
-                sqlite_backup, Path(store.engine.url.database).resolve(), backup_path
-            )
-        else:
-            if not backup_path.is_file() or backup_path.stat().st_size < 256:
-                raise ValueError("请先完成PostgreSQL备份并提供非空备份文件")
-            with backup_path.open("rb") as source:
-                prefix = source.read(128)
-            if not (prefix.startswith(b"PGDMP") or b"PostgreSQL database dump" in prefix):
-                raise ValueError("备份文件须为pg_dump自定义格式或SQL格式")
+        await create_backup(store, backup_path)
         async with store.engine.begin() as connection:
             if store.engine.dialect.name == "sqlite":
                 await connection.exec_driver_sql("BEGIN IMMEDIATE")
@@ -232,6 +219,24 @@ async def grouped_sessions(connection, groups):
         for row in rows:
             yield row
         cursor = tuple(rows[-1])
+
+
+async def create_backup(store, backup_path):
+    """所有显式追加迁移共用备份门，拒绝覆盖已有SQLite备份。"""
+    if backup_path is None:
+        raise ValueError("执行迁移必须提供新的SQLite备份路径，或已完成的PostgreSQL备份文件")
+    backup_path = Path(backup_path).resolve()
+    if store.engine.dialect.name == "sqlite":
+        await asyncio.to_thread(
+            sqlite_backup, Path(store.engine.url.database).resolve(), backup_path
+        )
+        return
+    if not backup_path.is_file() or backup_path.stat().st_size < 256:
+        raise ValueError("请先完成PostgreSQL备份并提供非空备份文件")
+    with backup_path.open("rb") as source:
+        prefix = source.read(128)
+    if not (prefix.startswith(b"PGDMP") or b"PostgreSQL database dump" in prefix):
+        raise ValueError("备份文件须为pg_dump自定义格式或SQL格式")
 
 
 def main(argv=None):

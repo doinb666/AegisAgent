@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.orm import aliased
 
 from .errors import HarnessError
-from .models import Base, Event, Run, Thread, ThreadRun, ToolCall
+from .models import NOTIFICATION_TYPES, Base, Event, Notification, Run, Thread, ThreadRun, ToolCall
 
 ACTIVE_STATUSES = ("queued", "running", "waiting_approval")
 TERMINAL_STATUSES = ("completed", "failed", "cancelled", "interrupted")
@@ -66,6 +66,7 @@ class Store:
         self.sessions = async_sessionmaker(self.engine, expire_on_commit=False)
         self.write_lock = asyncio.Lock()
         self.threads_ready = False
+        self.notifications_ready = False
         if self.engine.dialect.name == "sqlite":
 
             @event.listens_for(self.engine.sync_engine, "connect")
@@ -79,7 +80,11 @@ class Store:
         async with self.engine.begin() as connection:
             tables = await connection.run_sync(lambda sync: set(inspect(sync).get_table_names()))
             if self.settings.auto_create_schema:
-                deferred = {Thread.__tablename__, ThreadRun.__tablename__}
+                deferred = {
+                    Thread.__tablename__,
+                    ThreadRun.__tablename__,
+                    Notification.__tablename__,
+                }
                 selected = [
                     table
                     for table in Base.metadata.sorted_tables
@@ -92,6 +97,7 @@ class Store:
                     lambda sync: set(inspect(sync).get_table_names())
                 )
             self.threads_ready = {Thread.__tablename__, ThreadRun.__tablename__} <= tables
+            self.notifications_ready = Notification.__tablename__ in tables
 
     @asynccontextmanager
     async def transaction(self, existing=None):
@@ -128,15 +134,30 @@ class Store:
             raise HarnessError(404, "资源不存在或无权访问")
 
     def emit(self, session, run, event_type, data):
-        session.add(
-            Event(
-                tenant_id=run.tenant_id,
-                owner_id=run.owner_id,
-                run_id=run.id,
-                type=event_type,
-                data=data,
-            )
+        event_record = Event(
+            tenant_id=run.tenant_id,
+            owner_id=run.owner_id,
+            run_id=run.id,
+            type=event_type,
+            data=data,
         )
+        session.add(event_record)
+        if (
+            self.notifications_ready
+            and run.parent_run_id is None
+            and event_type in NOTIFICATION_TYPES
+        ):
+            session.add(
+                Notification(
+                    event=event_record,
+                    tenant_id=run.tenant_id,
+                    owner_id=run.owner_id,
+                    run_id=run.id,
+                    type=event_type,
+                    title=run.message[:160],
+                    created=time.time(),
+                )
+            )
 
     async def unknown_tool(self, session, run):
         return await session.scalar(

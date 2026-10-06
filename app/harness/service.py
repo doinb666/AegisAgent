@@ -15,6 +15,7 @@ from .errors import HarnessError, Principal
 from .inspection import InspectionService
 from .model_gateway import SharedModelGateway
 from .models import Asset, Feedback, Run, ThreadRun, Token, ToolCall, User
+from .notifications import NotificationService
 from .security import canonical, digest, password_hash, password_matches
 from .store import Store, run_dict, scope, uid
 from .threads import ThreadService
@@ -35,6 +36,7 @@ class HarnessService(AssetService):
         )
         self.workers = []
         self.threads = ThreadService(self.store)
+        self.notifications = NotificationService(self.store)
         self.wakeup = asyncio.Event()
         self.closing = False
 

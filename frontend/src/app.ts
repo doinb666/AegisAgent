@@ -5,6 +5,7 @@ import { initializeNavigation } from "./navigation";
 import { createMessage } from "./reply-view";
 import { createThreadHistory } from "./thread-view";
 import { initializeProjectThreads, type Thread } from "./project-threads";
+import { initializeNotifications } from "./notifications";
 
 const $ = (id: string): any => document.getElementById(id);
 const apiRoot = "/api/v1";
@@ -17,6 +18,7 @@ const kinds = {profile:"偏好",preference:"偏好",constraint:"约束",memory:"
 const assetStates = {draft:"候选",active:"已启用",retired:"已退役"};
 function notice(text) { $("notice").textContent = text; }
 const canWrite = () => state.user && state.user.role !== "viewer";
+const notifications = initializeNotifications({api, identity: () => state.token, openRun});
 const projectThreads = initializeProjectThreads({
   api, identity: () => state.token, canWrite, select: selectThread, notice,
   changed: thread => {
@@ -66,6 +68,7 @@ async function guard(action, button=null) {
   finally { if (button && token===state.token) button.disabled = button.id==="send" && (state.runLoading || projectThreads.isArchived()); }
 }
 function resetLogin() {
+  notifications.clear();
   projectThreads.clear();
   navigation.close();
   clearTimeout(searchTimer);
@@ -107,6 +110,7 @@ async function enter(user) {
   WorkspaceUI.renderCapabilities(cap);
   WorkspaceUI.configureCollaboration(cap,canWrite());
   projectThreads.configure(cap);
+  notifications.configure(cap);
   $("member-form").closest("details").hidden=cap.role!=="admin";
   const bootstrap=await api("/auth/me");
   if(token!==state.token)return;
@@ -263,6 +267,7 @@ async function watch(id,generation,token) {
     if(changed && !['queued','running'].includes(run.status))loadRunFiles();
     await refreshRuns();if(!valid())return;
     await refreshOverview();if(!valid())return;
+    void notifications.refresh();
     if(['queued','running'].includes(run.status)) setTimeout(()=>watch(id,generation,token),500);
   } catch(error) {
     if(error.name==="AbortError" || !valid()) return;

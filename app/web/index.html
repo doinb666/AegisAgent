@@ -19,6 +19,7 @@
     <symbol id="icon-skill" viewBox="0 0 24 24"><path d="m13 3-8 11h6l-1 7 9-12h-6Z"/></symbol>
     <symbol id="icon-book" viewBox="0 0 24 24"><path d="M12 5c-3-2-6-2-9-1v15c3-1 6-1 9 1 3-2 6-2 9-1V4c-3-1-6-1-9 1Zm0 0v15"/></symbol>
     <symbol id="icon-settings" viewBox="0 0 24 24"><path d="M5 4v16M12 4v16M19 4v16M2 8h6M9 16h6M16 10h6"/></symbol>
+    <symbol id="icon-bell" viewBox="0 0 24 24"><path d="M6 10a6 6 0 0 1 12 0v5l2 3H4l2-3Zm4 11h4M12 2v2"/></symbol>
   </defs></svg>
   <button id="theme-toggle" class="theme-toggle" type="button" aria-label="切换为浅色主题"><svg class="icon" aria-hidden="true"><use href="#icon-theme"/></svg><span id="theme-label">浅色主题</span></button>
   <div id="auth" class="auth-screen">
@@ -62,11 +63,16 @@
     </aside>
     <main class="main">
       <header class="topbar"><button id="sidebar-toggle" class="icon-button" type="button" aria-label="折叠导航" aria-expanded="true" aria-controls="workspace-sidebar"><svg class="icon" aria-hidden="true"><use href="#icon-panel"/></svg></button><div class="topbar-context"><span class="eyebrow">工作空间 / <span id="location">任务</span></span><h2 id="view-title">任务空间</h2><div id="memory-preview" class="memory-preview"></div><p id="workspace-overview" class="workspace-overview">正在读取本人任务与资产…</p></div>
-        <div class="topbar-actions"><button id="command-toggle" class="command-toggle" type="button" aria-label="快捷跳转，Ctrl K" aria-expanded="false" aria-controls="quick-actions">跳转 <kbd>Ctrl K</kbd></button><span id="connection" class="status-tag">尚未连接任务</span><button id="inspector-toggle" class="icon-button" aria-label="折叠审查区" aria-expanded="true" aria-controls="inspector"><svg class="icon" aria-hidden="true"><use href="#icon-panel"/></svg></button></div></header>
+        <div class="topbar-actions"><button id="notifications-toggle" type="button" aria-label="站内通知" aria-expanded="false" aria-controls="notifications-panel" hidden><svg class="icon" aria-hidden="true"><use href="#icon-bell"/></svg><span id="notifications-count" hidden></span></button><button id="command-toggle" class="command-toggle" type="button" aria-label="快捷跳转，Ctrl K" aria-expanded="false" aria-controls="quick-actions">跳转 <kbd>Ctrl K</kbd></button><span id="connection" class="status-tag">尚未连接任务</span><button id="inspector-toggle" class="icon-button" aria-label="折叠审查区" aria-expanded="true" aria-controls="inspector"><svg class="icon" aria-hidden="true"><use href="#icon-panel"/></svg></button></div></header>
       <section id="quick-actions" class="quick-actions" aria-labelledby="commands-heading" hidden>
         <div class="quick-heading"><h3 id="commands-heading">快速到达</h3><button id="command-close" type="button" aria-label="关闭快捷跳转">关闭 <kbd>Esc</kbd></button></div>
         <label class="sr-only" for="command-query">搜索工作台入口</label><input id="command-query" type="search" maxlength="100" placeholder="任务、记忆、Skills 或设置…" autocomplete="off">
         <p id="command-count" class="muted" role="status"></p><ul id="command-results"></ul>
+      </section>
+      <section id="notifications-panel" class="notifications-panel" aria-labelledby="notifications-heading" hidden>
+        <div class="quick-heading"><h3 id="notifications-heading">站内通知</h3><div><button id="notifications-refresh" type="button">刷新</button><button id="notifications-close" type="button">关闭 <kbd>Esc</kbd></button></div></div>
+        <p id="notifications-status" class="muted" role="status"></p>
+        <ul id="notifications-list"></ul><button id="notifications-more" type="button" hidden>加载更多通知</button>
       </section>
       <section id="chat-view" class="view chat-view">
         <div id="conversation" class="conversation" aria-live="polite">

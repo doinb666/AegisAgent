@@ -71,6 +71,13 @@ def open_when_started(
 
 
 def main() -> None:
+    if "--migrate-notifications" in sys.argv:
+        from app.harness.notification_migration import main as notification_main
+
+        notification_main(
+            [argument for argument in sys.argv[1:] if argument != "--migrate-notifications"]
+        )
+        return
     if "--migrate-threads" in sys.argv:
         from app.harness.thread_migration import main as migration_main
 

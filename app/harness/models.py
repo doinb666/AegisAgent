@@ -1,7 +1,19 @@
 """独立元数据，避免与旧应用表耦合。"""
 
-from sqlalchemy import JSON, Boolean, Float, Index, Integer, String, Text, UniqueConstraint
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+from sqlalchemy import (
+    JSON,
+    Boolean,
+    Float,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+)
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+
+NOTIFICATION_TYPES = ("completed", "failed", "waiting_approval", "interrupted")
 
 
 class Base(DeclarativeBase):
@@ -57,6 +69,23 @@ class Event(Base):
     run_id: Mapped[str] = mapped_column(String(36), index=True)
     type: Mapped[str] = mapped_column(String(64))
     data: Mapped[dict] = mapped_column(JSON)
+
+
+class Notification(Base):
+    __tablename__ = "harness_notifications"
+    __table_args__ = (
+        Index("ix_notice_owner_page", "tenant_id", "owner_id", "event_id"),
+        Index("ix_notice_owner_unread", "tenant_id", "owner_id", "read_at"),
+    )
+    event_id: Mapped[int] = mapped_column(ForeignKey("harness_events.id"), primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(String(36))
+    owner_id: Mapped[str] = mapped_column(String(36))
+    run_id: Mapped[str] = mapped_column(String(36))
+    type: Mapped[str] = mapped_column(String(64))
+    title: Mapped[str] = mapped_column(String(160))
+    created: Mapped[float] = mapped_column(Float)
+    read_at: Mapped[float | None] = mapped_column(Float, nullable=True)
+    event: Mapped[Event] = relationship()
 
 
 class ToolCall(Base):

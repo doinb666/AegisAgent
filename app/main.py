@@ -11,7 +11,7 @@ from fastapi.staticfiles import StaticFiles
 from loguru import logger
 
 from app.api.limits import EntryLimits
-from app.api.routes import harness, health, threads
+from app.api.routes import harness, health, notifications, threads
 from app.config import get_settings
 from app.harness.errors import HarnessError
 from app.harness.evolution import EvolutionWorker
@@ -57,6 +57,7 @@ def create_app(harness_settings=None, model_router=None, tool_executor=None) -> 
     application.include_router(health.router, prefix=settings.api_prefix)
     application.include_router(harness.router, prefix=settings.api_prefix)
     application.include_router(threads.router, prefix=settings.api_prefix)
+    application.include_router(notifications.router, prefix=settings.api_prefix)
     application.add_middleware(
         EntryLimits,
         max_bytes=harness_settings.max_upload_bytes + 65536,

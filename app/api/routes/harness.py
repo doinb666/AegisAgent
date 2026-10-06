@@ -141,6 +141,7 @@ async def capabilities(request: Request, principal=Depends(identity)):
         "role": principal.role,
         "max_steps": harness.settings.max_steps,
         "threads": {"enabled": harness.store.threads_ready},
+        "notifications": {"enabled": harness.store.notifications_ready},
     }
 
 
