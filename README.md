@@ -4,11 +4,11 @@
 
 AegisCode 面向个人开发者和企业成员：描述目标，由 Agent 规划、调用工具并保留执行证据；需要写文件、运行代码或调用外部服务时，由用户批准。经过审阅的偏好、约束和任务经验可以跨会话复用。
 
-快速开始：[下载 Windows 安装器](https://github.com/doinb666/AegisAgent/releases/download/v0.2.5/AegisCode-Setup.exe) · [下载便携版](https://github.com/doinb666/AegisAgent/releases/download/v0.2.5/AegisCode-portable.zip) · [全部安装方式](#安装与启动)。
+快速开始：[下载 Windows 安装器](https://github.com/doinb666/AegisAgent/releases/download/v0.2.6/AegisCode-Setup.exe) · [下载便携版](https://github.com/doinb666/AegisAgent/releases/download/v0.2.6/AegisCode-portable.zip) · [全部安装方式](#安装与启动)。
 
 [安装与启动](#安装与启动) · [使用场景与截图](#使用场景与截图) · [模型配置](#模型配置) · [使用方式](#使用方式) · [项目亮点](#项目亮点) · [使用手册](docs/使用手册.md)
 
-![AegisCode 工作台](docs/升级方案/截图/0.2.5/完整验收/00-浅色空工作台.png)
+![AegisCode 项目多会话工作台](docs/截图/项目会话/01-项目独立会话.png)
 
 ## 界面与操作
 
@@ -48,11 +48,11 @@ AegisCode 面向个人开发者和企业成员：描述目标，由 Agent 规划
 | 使用自己的模型服务 | 能力与设置 → 接入自己的模型服务 | 支持兼容接口、Anthropic、Azure、Ollama 和自定义来源，独立熔断与降级 |
 | 私有部署与日常使用 | EXE、源码／wheel、Docker | 同一套工作台覆盖个人本机与企业部署，资源按用户隔离 |
 
-**连续问答与代码阅读。** 打开一个任务即可查看此前问答；较长会话点击「加载更早的问答」。当前源码已提供，0.2.5 下载包尚未包含这项新增功能。
+**连续问答与代码阅读。** 打开一个任务即可查看此前问答；较长会话点击「加载更早的问答」。0.2.6 源码与下载包均已提供。
 
 ![连续问答与代码阅读](docs/截图/会话历史/04-当前代码问答.png)
 
-**项目内多会话。** 同一项目分别讨论权限边界、性能和测试；各会话保留自己的问答与运行证据。下图来自独立数据库、真实 HTTP 链路和确定性测试模型；当前源码已提供，0.2.5 下载包尚未包含。
+**项目内多会话。** 同一项目分别讨论权限边界、性能和测试；各会话保留自己的问答与运行证据。下图来自独立数据库、真实 HTTP 链路和确定性测试模型；0.2.6 源码与下载包均已提供。
 
 ![真实项目独立会话](docs/截图/项目会话/01-项目独立会话.png)
 
@@ -87,12 +87,12 @@ AegisCode 面向个人开发者和企业成员：描述目标，由 Agent 规划
 
 ### Windows 桌面使用
 
-当前版本 **0.2.5**：[版本说明与全部下载](https://github.com/doinb666/AegisAgent/releases/tag/v0.2.5)。
+当前版本 **0.2.6**：[版本说明与全部下载](https://github.com/doinb666/AegisAgent/releases/tag/v0.2.6)。
 
-- [Windows 安装器 EXE](https://github.com/doinb666/AegisAgent/releases/download/v0.2.5/AegisCode-Setup.exe)：安装到空目录后双击 AegisCode.exe。
-- [Windows 便携 ZIP](https://github.com/doinb666/AegisAgent/releases/download/v0.2.5/AegisCode-portable.zip)：解压并保留完整目录。
-- [Python wheel](https://github.com/doinb666/AegisAgent/releases/download/v0.2.5/aegiscode-0.2.5-py3-none-any.whl)：适合 Python 用户。
-- [SHA256 校验和](https://github.com/doinb666/AegisAgent/releases/download/v0.2.5/SHA256SUMS.txt)：使用 PowerShell `Get-FileHash 文件名 -Algorithm SHA256` 核对。
+- [Windows 安装器 EXE](https://github.com/doinb666/AegisAgent/releases/download/v0.2.6/AegisCode-Setup.exe)：安装到空目录后双击 AegisCode.exe。
+- [Windows 便携 ZIP](https://github.com/doinb666/AegisAgent/releases/download/v0.2.6/AegisCode-portable.zip)：解压并保留完整目录。
+- [Python wheel](https://github.com/doinb666/AegisAgent/releases/download/v0.2.6/aegiscode-0.2.6-py3-none-any.whl)：适合 Python 用户。
+- [SHA256 校验和](https://github.com/doinb666/AegisAgent/releases/download/v0.2.6/SHA256SUMS.txt)：使用 PowerShell `Get-FileHash 文件名 -Algorithm SHA256` 核对。
 
 如需自行构建，在 Windows 执行：
 
@@ -111,7 +111,7 @@ python -m venv .venv
 - 双击 `dist/AegisCode-Setup.exe`，按安装器提示安装。
 - 解压 `dist/AegisCode-portable.zip`，双击其中的 `AegisCode.exe`。保留整个目录及 `_internal`。
 
-EXE 默认仅监听本机，自动打开浏览器；配置与数据默认存放在 `%LOCALAPPDATA%/AegisCode/`。在该目录创建 `.env`，配置模型后重启。支持 `--port`、`--data-dir`、`--config`、`--no-browser`。安装包不包含模型权重，当前构建未做代码签名。
+EXE 默认仅监听本机，自动打开浏览器；配置与数据默认存放在 `%LOCALAPPDATA%/AegisCode/`。在该目录创建 `.env`，配置模型后重启。支持 `--port`、`--auto-port`、`--data-dir`、`--config`、`--no-browser` 和两项显式迁移入口。安装包不包含模型权重，当前构建未做代码签名。
 
 EXE 桌面启动采用「本地服务 + 浏览器工作台」，Skills 与 Web 使用同一套功能和数据，不是原生 WebView 桌面壳。
 
@@ -148,7 +148,7 @@ python -m app.launcher
 .venv/Scripts/python.exe -m app.launcher --port 8001
 ```
 
-当前源码还可添加 `--auto-port`：指定端口被占用时绑定空闲端口，并在日志显示实际地址。浏览器在本进程初始化完成后打开；初始化超过 60 秒会提示手动访问，不终止服务。这两项改进尚未进入 0.2.5 下载包。
+当前源码还可添加 `--auto-port`：指定端口被占用时绑定空闲端口，并在日志显示实际地址。浏览器在本进程初始化完成后打开；初始化超过 60 秒会提示手动访问，不终止服务。0.2.6 下载包已包含这两项改进。
 
 ```powershell
 .venv/Scripts/python.exe -m app.launcher --auto-port
@@ -160,7 +160,7 @@ wheel 构建与安装：
 python -m pip install ".[dev]"
 python scripts/build_wheel.py
 # 安装 dist 中实际生成的 aegiscode-版本号-py3-none-any.whl
-python -m pip install dist/aegiscode-0.2.5-py3-none-any.whl
+python -m pip install dist/aegiscode-0.2.6-py3-none-any.whl
 aegiscode
 ```
 
@@ -194,7 +194,7 @@ docker compose up --build -d
 .venv/Scripts/python.exe -m app.launcher --data-dir data
 ```
 
-新安装包可用 `aegiscode --migrate-threads` 或 `AegisCode.exe --migrate-threads` 传入相同参数；0.2.5 下载包尚无此入口。PostgreSQL 先完成 `pg_dump`，再提供备份文件。迁移保留旧任务与会话标识，重复执行不新增关联；详细 Docker 命令与恢复说明见[项目会话使用指南](docs/项目会话使用指南.md)。
+0.2.6 安装包可用 `aegiscode --migrate-threads` 或 `AegisCode.exe --migrate-threads` 传入相同参数。PostgreSQL 先完成 `pg_dump`，再提供备份文件。通知表另用 `python -m app.harness.notification_migration` 预览／备份迁移，见[通知使用指南](docs/站内通知使用指南.md)。迁移保留旧任务与会话标识，重复执行不新增关联；详细 Docker 命令与恢复说明见[项目会话使用指南](docs/项目会话使用指南.md)。
 
 ## 模型配置
 
@@ -270,7 +270,7 @@ Skill 快速体验：[下载示例 SKILL.md](docs/examples/skills/review-python/
 - **没有模型或任务失败**：填写模型配置并重启，确认该模型支持工具调用和你的账号权限。
 - **无法执行代码**：配置并验证 Docker 沙箱；未配置时拒绝执行，不降级为宿主运行。
 - **看不到仓库工具或 MCP**：它们由运维配置与用户授权决定，不能通过普通对话添加任意宿主路径或服务地址。
-- **下载或启动安装器**：使用上方 0.2.5 Release 链接并核对 SHA256；便携版不能只复制一个 EXE。默认 8000 已占用时，从安装目录执行 `./AegisCode.exe --port 8002`，选择一个空闲端口。
+- **下载或启动安装器**：使用上方 0.2.6 Release 链接并核对 SHA256；便携版不能只复制一个 EXE。默认 8000 已占用时，从安装目录执行 `./AegisCode.exe --port 8002`，选择一个空闲端口。
 
 API 文档位于 `/docs`，数据库就绪探针为 `/api/v1/health/ready`。业务 API 需要登录令牌，创建任务需要 `Idempotency-Key`。
 
