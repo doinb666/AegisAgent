@@ -22,6 +22,60 @@ class InspectionService:
         self.store = store
         self.workspace = workspace
 
+    async def thread(self, principal, run_id, limit=20, before=None):
+        """以选中的运行为时间边界，只读取本人顶层会话的公开问答。"""
+        if (
+            not isinstance(limit, int)
+            or isinstance(limit, bool)
+            or not 1 <= limit <= 50
+            or (before is not None and (not isinstance(before, str) or len(before) > 128))
+        ):
+            raise HarnessError(422, "会话分页参数无效")
+        async with self.store.sessions() as session:
+            selected = await self.store.run_view(session, run_id, principal)
+            statement = select(
+                Run.id, Run.message, Run.answer, Run.error, Run.status, Run.created
+            ).where(*scope(Run, principal))
+            if selected.parent_run_id:
+                # 子任务不混入主线程，也不展示其他子任务的独立上下文。
+                statement = statement.where(Run.id == selected.id)
+            else:
+                statement = statement.where(
+                    Run.session_id == selected.session_id,
+                    Run.parent_run_id.is_(None),
+                    or_(
+                        Run.created < selected.created,
+                        and_(Run.created == selected.created, Run.id <= selected.id),
+                    ),
+                )
+            if before is not None:
+                cursor = await self.store.run_view(session, before, principal)
+                if (
+                    cursor.session_id != selected.session_id
+                    or cursor.parent_run_id != selected.parent_run_id
+                    or (cursor.created, cursor.id) > (selected.created, selected.id)
+                    or (selected.parent_run_id and cursor.id != selected.id)
+                ):
+                    raise HarnessError(404, "会话游标不存在或无权访问")
+                statement = statement.where(
+                    or_(
+                        Run.created < cursor.created,
+                        and_(Run.created == cursor.created, Run.id < cursor.id),
+                    )
+                )
+            rows = (
+                await session.execute(
+                    statement.order_by(Run.created.desc(), Run.id.desc()).limit(limit + 1)
+                )
+            ).all()
+            has_more = len(rows) > limit
+            items = [dict(row._mapping) for row in reversed(rows[:limit])]
+            return {
+                "items": items,
+                "has_more": has_more,
+                "next_before": items[0]["id"] if has_more else None,
+            }
+
     async def list_runs(self, principal, query=None, status=None, limit=100, before=None):
         if (
             not isinstance(limit, int)

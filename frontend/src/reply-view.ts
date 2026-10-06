@@ -1,4 +1,14 @@
 // 所有模型内容均以文本节点渲染，仅支持有界的段落、标题、行内代码和代码围栏。
+export function createMessage(role: string, text: string): HTMLElement {
+  const article = document.createElement("article");
+  article.className = `message ${role}`;
+  const label = document.createElement("span");
+  label.className = "message-label";
+  label.textContent = role === "user" ? "你" : "AegisCode";
+  article.append(label, role === "assistant" ? renderReply(text) : document.createTextNode(text));
+  return article;
+}
+
 function appendInline(parent: HTMLElement, text: string): void {
   const pieces = text.split(/(`[^`\n]+`)/g);
   for (const piece of pieces) {

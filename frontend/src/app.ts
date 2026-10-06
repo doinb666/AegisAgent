@@ -2,7 +2,8 @@
 
 import WorkspaceUI from "./workspace-ui";
 import { initializeNavigation } from "./navigation";
-import { renderReply } from "./reply-view";
+import { createMessage } from "./reply-view";
+import { createThreadHistory } from "./thread-view";
 
 const $ = (id: string): any => document.getElementById(id);
 const apiRoot = "/api/v1";
@@ -161,9 +162,7 @@ async function refreshRuns(more=false) {
   } finally { if(valid()){state.runsLoading=false;$("runs-more").disabled=false;} }
 }
 function message(role,text) {
-  const article=document.createElement("article"); article.className=`message ${role}`;
-  const label=document.createElement("span"); label.className="message-label"; label.textContent=role==="user"?"你":"AegisCode";
-  article.append(label,role === "assistant" ? renderReply(text) : document.createTextNode(text)); $("conversation").append(article);
+  $("conversation").append(createMessage(role,text));
 }
 function renderRun(run) {
   state.run=run; state.session=run.session_id;
@@ -194,6 +193,9 @@ async function openRun(id) {
   try {
     const run=await api(`/runs/${id}`);if(!valid())return;
     message("user",run.message); renderRun(run);WorkspaceUI.setInspector(true);
+    $("conversation").prepend(createThreadHistory(
+      id, api, () => runCurrent(id,generation,token), statuses,
+    ));
     sessionStorage.setItem("aegis-last-run",id);renderRuns();
     watch(id,generation,token);loadRunFiles();
     return true;

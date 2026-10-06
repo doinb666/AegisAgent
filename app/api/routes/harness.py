@@ -187,6 +187,17 @@ async def run_files(run_id: str, request: Request, principal=Depends(identity)):
     return await service(request).list_run_files(principal, run_id)
 
 
+@router.get("/runs/{run_id}/thread")
+async def run_thread(
+    run_id: str,
+    request: Request,
+    limit: int = Query(default=20, ge=1, le=50),
+    before: str | None = Query(default=None, max_length=128),
+    principal=Depends(identity),
+):
+    return await service(request).inspection.thread(principal, run_id, limit, before)
+
+
 @router.get("/runs/{run_id}/file")
 async def run_file(
     run_id: str,

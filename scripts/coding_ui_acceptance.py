@@ -68,6 +68,8 @@ def main():
                 value = [run]
             elif path.endswith("/coding-fixture"):
                 value = run
+            elif path.endswith("/thread"):
+                value = {"items": [run], "has_more": False, "next_before": None}
             elif path.endswith("/events"):
                 route.fulfill(content_type="text/event-stream", body="")
                 return
