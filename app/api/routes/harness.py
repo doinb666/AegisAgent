@@ -12,6 +12,7 @@ from pydantic import BaseModel, Field
 
 from app.etl.isolated import parse_isolated
 from app.harness.errors import HarnessError
+from app.harness.schedules import SCHEDULE_TOOLS
 
 router = APIRouter(tags=["AegisCode"])
 TERMINAL = {"completed", "failed", "cancelled", "interrupted"}
@@ -142,6 +143,13 @@ async def capabilities(request: Request, principal=Depends(identity)):
         "max_steps": harness.settings.max_steps,
         "threads": {"enabled": harness.store.threads_ready},
         "notifications": {"enabled": harness.store.notifications_ready},
+        "schedules": {
+            "enabled": harness.store.schedules_ready,
+            "max_active": 100,
+            "min_interval_seconds": 60,
+            "max_interval_seconds": 31 * 86400,
+            "readonly_tools": sorted(SCHEDULE_TOOLS),
+        },
     }
 
 

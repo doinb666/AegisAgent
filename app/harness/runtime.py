@@ -263,6 +263,12 @@ class Worker:
     async def react(self, run):
         async with self.store.sessions() as session:
             user = await session.get(User, run.owner_id)
+        if run.config.get("schedule_id") and (
+            user is None
+            or user.tenant_id != run.tenant_id
+            or user.role not in {"admin", "operator"}
+        ):
+            raise HarnessError(403, "定时任务执行身份或权限已失效")
         principal = Principal(user.id, user.tenant_id, user.role)
         catalog = (
             self.service.tool_executor.catalog(principal) if self.service.tool_executor else []
@@ -426,6 +432,19 @@ class Worker:
         return []
 
     async def execute_tool(self, run, principal, call, messages, step, allowed):
+        if run.config.get("schedule_id"):
+            from .schedules import SCHEDULE_TOOLS
+
+            async with self.store.sessions() as session:
+                user = await session.get(User, run.owner_id)
+            if (
+                user is None
+                or user.tenant_id != run.tenant_id
+                or user.role not in {"admin", "operator"}
+            ):
+                raise HarnessError(403, "定时任务执行权限已撤销")
+            principal = Principal(user.id, user.tenant_id, user.role)
+            allowed = allowed & SCHEDULE_TOOLS & set(self.service.accessible_tool_names(principal))
         call_id = call.get("id")
         function = call.get("function", {})
         name = function.get("name")

@@ -11,6 +11,7 @@ from sqlalchemy.orm import aliased
 
 from .errors import HarnessError
 from .models import NOTIFICATION_TYPES, Base, Event, Notification, Run, Thread, ThreadRun, ToolCall
+from .schedule_models import Occurrence, Schedule
 
 ACTIVE_STATUSES = ("queued", "running", "waiting_approval")
 TERMINAL_STATUSES = ("completed", "failed", "cancelled", "interrupted")
@@ -67,6 +68,7 @@ class Store:
         self.write_lock = asyncio.Lock()
         self.threads_ready = False
         self.notifications_ready = False
+        self.schedules_ready = False
         if self.engine.dialect.name == "sqlite":
 
             @event.listens_for(self.engine.sync_engine, "connect")
@@ -84,6 +86,8 @@ class Store:
                     Thread.__tablename__,
                     ThreadRun.__tablename__,
                     Notification.__tablename__,
+                    Schedule.__tablename__,
+                    Occurrence.__tablename__,
                 }
                 selected = [
                     table
@@ -98,6 +102,7 @@ class Store:
                 )
             self.threads_ready = {Thread.__tablename__, ThreadRun.__tablename__} <= tables
             self.notifications_ready = Notification.__tablename__ in tables
+            self.schedules_ready = {Schedule.__tablename__, Occurrence.__tablename__} <= tables
 
     @asynccontextmanager
     async def transaction(self, existing=None):

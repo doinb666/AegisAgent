@@ -16,6 +16,7 @@ from .inspection import InspectionService
 from .model_gateway import SharedModelGateway
 from .models import Asset, Feedback, Run, ThreadRun, Token, ToolCall, User
 from .notifications import NotificationService
+from .schedules import ScheduleService
 from .security import canonical, digest, password_hash, password_matches
 from .store import Store, run_dict, scope, uid
 from .threads import ThreadService
@@ -37,6 +38,7 @@ class HarnessService(AssetService):
         self.workers = []
         self.threads = ThreadService(self.store)
         self.notifications = NotificationService(self.store)
+        self.schedules = ScheduleService(self)
         self.wakeup = asyncio.Event()
         self.closing = False
 
@@ -51,9 +53,11 @@ class HarnessService(AssetService):
         )
         for worker in self.workers:
             worker.start()
+        self.schedules.start()
 
     async def close(self):
         self.closing = True
+        await self.schedules.close()
         for worker in self.workers:
             worker.task.cancel()
         await asyncio.gather(*(worker.task for worker in self.workers), return_exceptions=True)
@@ -165,6 +169,7 @@ class HarnessService(AssetService):
         collaboration_mode=None,
         project_mode=None,
         thread_id=None,
+        _schedule_gate=None,
     ):
         if not message.strip() or not idempotency_key or len(idempotency_key) > 256:
             raise HarnessError(422, "消息和幂等键不能为空，幂等键最多256字符")
@@ -220,7 +225,17 @@ class HarnessService(AssetService):
                     )
                     existing = await session.scalar(query)
                     if existing:
+                        if _schedule_gate is not None:
+                            await self.schedules.require_recovery(
+                                session, principal, existing, _schedule_gate
+                            )
+                            return run_dict(existing)
                         return self._idempotent(existing, payload_hash)
+                    schedule_id = None
+                    if _schedule_gate is not None:
+                        principal, allowed_tools, schedule_id = await self.schedules.gate(
+                            session, principal, _schedule_gate
+                        )
                     if parent_run_id:
                         parent = await self.store.owned(session, Run, parent_run_id, principal)
                         parent_locked = await session.execute(
@@ -403,6 +418,8 @@ class HarnessService(AssetService):
                             }
                         )
                     messages.append({"role": "user", "content": message})
+                    if _schedule_gate is not None:
+                        await self.schedules.require_lease(session, _schedule_gate)
                     run = Run(
                         id=uid(),
                         tenant_id=principal.tenant_id,
@@ -423,6 +440,7 @@ class HarnessService(AssetService):
                             "collaboration_mode": collaboration_mode,
                             "project_mode": project_mode,
                             "thread_id": thread.id if thread else None,
+                            **({"schedule_id": schedule_id} if schedule_id else {}),
                         },
                         messages=messages,
                         created=time.time(),

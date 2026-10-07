@@ -71,6 +71,11 @@ def open_when_started(
 
 
 def main() -> None:
+    if "--migrate-schedules" in sys.argv:
+        from app.harness.schedule_migration import main as schedule_main
+
+        schedule_main([argument for argument in sys.argv[1:] if argument != "--migrate-schedules"])
+        return
     if "--migrate-notifications" in sys.argv:
         from app.harness.notification_migration import main as notification_main
 
