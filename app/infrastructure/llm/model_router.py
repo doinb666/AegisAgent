@@ -22,6 +22,7 @@ from .model_parameters import (
     normalize_model_parameters,
     validate_model_parameters,
 )
+from .stream_assembly import StreamAssembly
 
 
 class LLMResponse(BaseModel):
@@ -49,6 +50,7 @@ class ModelConfig:
     parameters: ModelParameterCapabilities | dict = field(
         default_factory=ModelParameterCapabilities
     )
+    streaming: bool = True
 
     def __post_init__(self):
         entry = ModelEntry(
@@ -58,13 +60,17 @@ class ModelConfig:
             api_version=self.api_version,
             extra=self.extra,
             parameters=self.parameters,
+            streaming=self.streaming,
         )
         self.extra = entry.extra
         self.parameters = entry.parameters
+        self.streaming = entry.streaming
 
 
 class ModelRouter:
     """多模型路由器：支持优先级调度、负载均衡（同优先级加权随机）、自动降级。"""
+
+    supports_incremental = True
 
     def __init__(
         self,
@@ -119,6 +125,7 @@ class ModelRouter:
                 "provider": cfg.provider.value,
                 "priority": cfg.priority,
                 "parameters": cfg.parameters.model_dump(),
+                "streaming": cfg.streaming and cfg.provider != ModelProvider.ANTHROPIC,
             }
             for cfg in self._configs
         ]
@@ -156,16 +163,21 @@ class ModelRouter:
         messages: list[dict[str, Any]],
         model_preference: str | None = None,
         model_parameters: dict | None = None,
+        on_delta=None,
         **kwargs: Any,
     ) -> LLMResponse:
         """智能路由到合适模型；失败时按候选顺序自动降级。"""
         async with self._semaphore:
             return await self._chat(
-                messages, model_preference, normalize_model_parameters(model_parameters), **kwargs
+                messages,
+                model_preference,
+                normalize_model_parameters(model_parameters),
+                on_delta,
+                **kwargs,
             )
 
     async def _chat(
-        self, messages, model_preference=None, model_parameters=None, **kwargs
+        self, messages, model_preference=None, model_parameters=None, on_delta=None, **kwargs
     ) -> LLMResponse:
         candidates = self._select_candidates(model_preference)
 
@@ -175,15 +187,20 @@ class ModelRouter:
             except ValueError:
                 continue
             breaker = self._breakers[self._route_key(cfg)]
+            assembly = StreamAssembly()
             try:
                 return await breaker.call(
                     self._try_model,
                     self._route_key(cfg),
                     messages,
                     model_parameters=model_parameters,
+                    on_delta=on_delta,
+                    assembly=assembly,
                     **kwargs,
                 )
             except Exception as exc:
+                if assembly.semantic_seen:
+                    raise RuntimeError("模型流在开始输出后中断，禁止换源继续生成") from None
                 logger.warning("模型 [{}] 调用失败，尝试降级: {}", cfg.model_id, type(exc).__name__)
 
         raise RuntimeError("所有候选模型均不可用；请检查模型配置或稍后重试") from None
@@ -193,6 +210,8 @@ class ModelRouter:
         model_id: str,
         messages: list[dict[str, Any]],
         model_parameters: dict | None = None,
+        on_delta=None,
+        assembly=None,
         **kwargs: Any,
     ) -> LLMResponse:
         """尝试调用指定模型（经熔断器包装，不在此处重复熔断逻辑）。"""
@@ -233,6 +252,25 @@ class ModelRouter:
                 usage=raw["usage"],
                 raw=raw,
             )
+        if on_delta is not None and config.streaming:
+            # stream 与用量选项由内核控制，extra_body 合并不能改写这些字段。
+            params["extra_body"] = {
+                key: value
+                for key, value in params.get("extra_body", {}).items()
+                if key not in {"stream", "stream_options"}
+            }
+            params["stream"] = True
+            params["stream_options"] = {"include_usage": True}
+            stream = await client.chat.completions.create(**params)
+            try:
+                async for chunk in stream:
+                    await assembly.consume(chunk, on_delta)
+                content, raw = assembly.complete()
+                return LLMResponse(
+                    content=content, model_id=config.model_id, usage=assembly.usage, raw=raw
+                )
+            finally:
+                await stream.close()
         resp = await client.chat.completions.create(**params)
 
         choice = resp.choices[0] if resp.choices else None
@@ -281,6 +319,7 @@ def build_harness_router(settings) -> ModelRouter | None:
             label=item.label,
             api_version=item.api_version,
             parameters=item.parameters,
+            streaming=item.streaming,
         )
         route = ModelRouter._route_key(config)
         if route in seen:

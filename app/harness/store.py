@@ -141,6 +141,25 @@ class Store:
             raise HarnessError(404, "资源不存在或无权访问")
 
     def emit(self, session, run, event_type, data):
+        marker = run.config.get("model_inflight")
+        terminal = event_type in TERMINAL_STATUSES or run.status in TERMINAL_STATUSES
+        if terminal and "model_result_pending" in run.config:
+            run.config = {
+                key: value for key, value in run.config.items() if key != "model_result_pending"
+            }
+        if terminal and marker and marker.get("public", True) and not marker.get("retracted"):
+            marker = {**marker, "seq": marker.get("seq", 0) + 1, "retracted": True}
+            run.config = {**run.config, "model_inflight": marker}
+            self.emit(
+                session,
+                run,
+                "model_output_retracted",
+                {
+                    "call_id": marker["call_id"],
+                    "seq": marker["seq"],
+                    "reason": "failed",
+                },
+            )
         event_record = Event(
             tenant_id=run.tenant_id,
             owner_id=run.owner_id,
@@ -278,8 +297,14 @@ class Store:
                 )
                 if not locked.rowcount:
                     continue
+                await session.refresh(run)
                 unknown = await self.unknown_tool(session, run)
-                recovered_status = "interrupted" if unknown else "queued"
+                inflight = run.config.get("model_inflight")
+                interrupted = bool(unknown or inflight)
+                reason = (
+                    "模型调用未完成，禁止自动重新生成" if inflight else "工具结果未知，禁止自动重放"
+                )
+                recovered_status = "interrupted" if interrupted else "queued"
                 recovered = await session.execute(
                     update(Run)
                     .where(Run.id == run.id, Run.status == "running", Run.lease_until < now)
@@ -287,11 +312,11 @@ class Store:
                         status=recovered_status,
                         lease_owner=None,
                         lease_until=None,
-                        error="工具结果未知，禁止自动重放" if unknown else None,
+                        error=reason if interrupted else None,
                     )
                 )
-                if recovered.rowcount and unknown:
-                    self.emit(session, run, "interrupted", {"reason": "工具结果未知"})
+                if recovered.rowcount and interrupted:
+                    self.emit(session, run, "interrupted", {"reason": reason})
                     await self.stop_children(session, run)
 
             child = aliased(Run)

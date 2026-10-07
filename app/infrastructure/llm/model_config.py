@@ -23,6 +23,7 @@ class ModelEntry(BaseModel):
     weight: float = Field(default=1, gt=0, le=10000, allow_inf_nan=False, strict=True)
     extra: dict = Field(default_factory=dict)
     parameters: ModelParameterCapabilities = Field(default_factory=ModelParameterCapabilities)
+    streaming: bool = Field(default=True, strict=True)
 
     @field_validator("base_url")
     @classmethod

@@ -8,8 +8,12 @@ from contextlib import asynccontextmanager
 
 from sqlalchemy import select, update
 
+from app.infrastructure.llm.model_usage import safe_model_usage
+from app.infrastructure.llm.stream_assembly import MAX_TEXT_CHARS
+
 from .context import PLAN_PROMPT, bounded_messages, collaboration_instructions
 from .errors import DocumentContextBudgetError, HarnessError, Principal
+from .model_output import ModelOutput
 from .models import Asset, Run, ToolCall, User
 from .security import canonical, digest
 from .store import TERMINAL_STATUSES, scope, uid
@@ -23,19 +27,6 @@ from .task_inputs import (
 logger = logging.getLogger(__name__)
 
 
-def safe_model_usage(usage):
-    """模型用量仅持久化四个标准字段及有界非负整数，避免供应商数据旁路。"""
-    if not isinstance(usage, dict):
-        return None
-    return {
-        key: value
-        for key, value in usage.items()
-        if key in {"prompt_tokens", "completion_tokens", "total_tokens", "cached_tokens"}
-        and type(value) is int
-        and 0 <= value <= 10**12
-    }
-
-
 class Worker:
     def __init__(self, service, child_only=False):
         self.service = service
@@ -45,6 +36,8 @@ class Worker:
         self.execution = None
         self.task = None
         self.child_only = child_only
+        self.model_output = None
+        self.model_call_id = None
 
     def start(self):
         self.task = asyncio.create_task(self.loop())
@@ -85,6 +78,8 @@ class Worker:
                 await asyncio.gather(heartbeat, return_exceptions=True)
                 self.execution = None
                 self.run_id = None
+                self.model_output = None
+                self.model_call_id = None
 
     async def safe_finish(self, run_id, status, **kwargs):
         try:
@@ -131,6 +126,13 @@ class Worker:
             return run
 
     async def checkpoint(self, run_id, messages, step, event_type, data, config=None):
+        completes_call = event_type in {
+            "model",
+            "reflection",
+            "plan",
+            "plan_fallback",
+            "risk_review",
+        }
         async with self.active_transaction(run_id) as (session, run):
             values = {"messages": messages, "step": step}
             if config is not None:
@@ -140,7 +142,30 @@ class Worker:
                         "document_context_prepared": True,
                         "document_references": run.config["document_references"],
                     }
+                # 生命周期标记只采用数据库最新值，局部旧配置不得复活或擦除标记。
+                config = dict(config)
+                for key in ("model_inflight", "model_result_pending"):
+                    config.pop(key, None)
+                    if key in run.config:
+                        config[key] = run.config[key]
                 values["config"] = config
+            output = self.model_output if event_type == "model" else None
+            if output is not None:
+                marker = run.config.get("model_inflight")
+                if not marker or marker.get("call_id") != output.call_id:
+                    raise RuntimeError("完整检查点与模型调用标记不一致")
+            if completes_call:
+                final_config = dict(values.get("config", run.config))
+                marker = final_config.pop("model_inflight", None)
+                if marker and self.model_call_id and marker["call_id"] != self.model_call_id:
+                    raise HarnessError(409, "模型检查点与当前调用不一致")
+                if event_type in {"model", "reflection"}:
+                    final_config["model_result_pending"] = {
+                        "call_id": marker["call_id"] if marker else uid(),
+                        "step": step,
+                        "kind": "tools" if messages[-1].get("tool_calls") else "answer",
+                    }
+                values["config"] = final_config
             updated = await session.execute(
                 update(Run)
                 .where(Run.id == run_id, Run.status == "running", Run.lease_owner == self.id)
@@ -149,6 +174,11 @@ class Worker:
             if not updated.rowcount:
                 raise asyncio.CancelledError()
             self.store.emit(session, run, event_type, data)
+            if output is not None:
+                self.store.emit(session, run, "model_output_finished", output.finished_data())
+                self.model_output = None
+            if completes_call:
+                self.model_call_id = None
 
     async def finish(self, run_id, status, answer=None, error=None):
         async with self.store.transaction() as session:
@@ -255,13 +285,45 @@ class Worker:
                 session.add(asset)
                 self.service.snapshot(session, asset)
 
-    async def model_call(self, run, messages, tools=None):
+    async def model_call(self, run, messages, tools=None, *, public_output=False, step=None):
         if self.service.model_router is None:
             raise HarnessError(503, "模型未配置；请配置有效模型凭证")
         await self.prepare_document_context(run, messages)
         kwargs = {"tools": tools, "tool_choice": "auto"} if tools else {}
         if run.config.get("model_parameters"):
             kwargs["model_parameters"] = run.config["model_parameters"]
+        output = None
+        public_stream = (
+            public_output
+            and getattr(self.service.model_router, "supports_incremental", False) is True
+        )
+        call_id = uid()
+        async with self.active_transaction(run.id) as (session, current):
+            if current.config.get("model_inflight"):
+                raise HarnessError(409, "未完成模型调用不能再次生成")
+            call_config = dict(current.config)
+            call_config.pop("model_result_pending", None)
+            current.config = {
+                **call_config,
+                "model_inflight": {
+                    "call_id": call_id,
+                    "step": step,
+                    "seq": 0,
+                    "public": public_stream,
+                },
+            }
+            if public_stream:
+                self.store.emit(
+                    session,
+                    current,
+                    "model_output_started",
+                    {"call_id": call_id, "seq": 0, "step": step},
+                )
+        self.model_call_id = call_id
+        if public_stream:
+            output = ModelOutput(self, run.id, call_id)
+            self.model_output = output
+            kwargs["on_delta"] = output.receive
         response = await asyncio.wait_for(
             self.service.model_router.chat(
                 bounded_messages(messages, self.service.settings.context_chars),
@@ -270,6 +332,15 @@ class Worker:
             ),
             timeout=self.service.settings.model_timeout_seconds,
         )
+        if output is not None:
+            output.characters = len(response.content or "")
+            if output.characters > MAX_TEXT_CHARS:
+                raise HarnessError(422, "模型文本输出超限")
+            raw_message = ((response.raw or {}).get("choices") or [{}])[0].get("message", {})
+            if raw_message.get("tool_calls"):
+                await output.retract("tools")
+            else:
+                await output.flush()
         # 统一记录所有成功调用，覆盖规划、反思与独立风险审查；不持久化请求正文。
         async with self.active_transaction(run.id) as (session, current):
             self.store.emit(
@@ -417,6 +488,17 @@ class Worker:
         while True:
             current_run = await self.load(run.id)
             config = {**config, **current_run.config}
+            known_result = current_run.config.get("model_result_pending")
+            if known_result and known_result.get("kind") == "answer":
+                if (
+                    known_result.get("step") != step
+                    or not messages
+                    or messages[-1].get("role") != "assistant"
+                    or messages[-1].get("tool_calls")
+                ):
+                    raise HarnessError(409, "已知模型结果与检查点不一致，禁止重新生成")
+                await self.complete_answer(run, messages, step, config)
+                return
             pending = self.pending_calls(messages)
             if pending:
                 for call in pending:
@@ -458,7 +540,9 @@ class Worker:
                     )
                 continue
             step += 1
-            response = await self.model_call(run, messages, catalog)
+            response = await self.model_call(
+                run, messages, catalog, public_output=config["mode"] == "react", step=step
+            )
             raw_message = ((response.raw or {}).get("choices") or [{}])[0].get("message", {})
             calls = raw_message.get("tool_calls") or []
             message = {"role": "assistant", "content": response.content or ""}
@@ -481,35 +565,40 @@ class Worker:
             )
             if calls:
                 continue
-            answer = response.content or ""
-            if (
-                config["mode"] == "reflection"
-                and self.service.settings.reflection_enabled
-                and not config.get("reflected")
-                and step < config["max_steps"] - config.get("delegated_steps", 0)
-            ):
-                config["reflected"] = True
-                step += 1
-                reflected = await self.model_call(
-                    run,
-                    messages
-                    + [
-                        {
-                            "role": "user",
-                            "content": (
-                                "根据已有证据检查回答并改进一次。"
-                                "证据不足时明确标注未验证，不允许自评分宣称验收通过。"
-                            ),
-                        }
-                    ],
-                )
-                answer = reflected.content or answer
-                messages.append({"role": "assistant", "content": answer})
-                await self.checkpoint(
-                    run.id, messages, step, "reflection", {"verified": False}, config
-                )
-            await self.finish(run.id, "completed", answer=answer)
+            await self.complete_answer(run, messages, step, config)
             return
+
+    async def complete_answer(self, run, messages, step, config):
+        """新答复和恢复的已知答复共用收尾；未完成反思必须经过原质量门。"""
+        current = await self.load(run.id)
+        config = {**config, **current.config}
+        answer = messages[-1].get("content") or ""
+        if (
+            config["mode"] == "reflection"
+            and self.service.settings.reflection_enabled
+            and not config.get("reflected")
+            and step < config["max_steps"] - config.get("delegated_steps", 0)
+        ):
+            config["reflected"] = True
+            step += 1
+            reflected = await self.model_call(
+                run,
+                messages
+                + [
+                    {
+                        "role": "user",
+                        "content": (
+                            "根据已有证据检查回答并改进一次。"
+                            "证据不足时明确标注未验证，不允许自评分宣称验收通过。"
+                        ),
+                    }
+                ],
+                step=step,
+            )
+            answer = reflected.content or answer
+            messages.append({"role": "assistant", "content": answer})
+            await self.checkpoint(run.id, messages, step, "reflection", {"verified": False}, config)
+        await self.finish(run.id, "completed", answer=answer)
 
     @staticmethod
     def pending_calls(messages):
