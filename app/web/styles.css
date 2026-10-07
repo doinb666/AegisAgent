@@ -410,6 +410,22 @@ kbd { font-size: 10px; font-family: inherit; color: var(--muted); border: 1px so
 .mcp-guide-row { padding: 16px; margin-top: 12px; background: var(--soft-alt); overflow-wrap: anywhere; }
 @media (max-width:700px) { .templates-view { padding: 24px 18px; } .templates-intro, .template-row { padding: 16px; } .template-list { grid-template-columns: 1fr; } }
 .schedule-intro { border-left: 3px solid var(--accent); background: var(--soft-alt); padding: 22px 24px; margin-bottom: 22px; }
+.plan-progress { margin: 22px 0; padding: 16px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--soft); min-width: 0; }
+.plan-summary { font-weight: 600; line-height: 1.7; }
+.plan-nodes { list-style: none; padding: 0; margin: 16px 0 0; }
+.plan-nodes>li { border-top: 1px solid var(--line); min-width: 0; }
+.plan-progress summary { min-height: 44px; cursor: pointer; padding: 12px 0; line-height: 1.7; overflow-wrap: anywhere; }
+.plan-progress summary:focus-visible { outline: 2px solid var(--action); outline-offset: 3px; border-radius: 4px; }
+.plan-objective { font-size: 13px; }
+.plan-state { display: block; padding-left: 18px; color: var(--muted); font-size: 12px; }
+.plan-nodes [data-status="completed"] .plan-state { color: var(--accent); }
+.plan-nodes [data-status="blocked"] .plan-state { color: var(--error); }
+.plan-detail { font-size: 12px; line-height: 1.7; overflow-wrap: anywhere; }
+.plan-source { border: 1px solid var(--line); padding: 8px 12px; margin: 8px 0; border-radius: var(--radius); }
+.plan-source p { white-space: pre-wrap; }
+.plan-reused { font-weight: 600; }
+.plan-history { margin-top: 16px; border-top: 1px solid var(--line); }
+.plan-archived-node { padding: 8px 0; border-bottom: 1px solid var(--line); }
 .schedule-intro h3 { font-size: 24px; margin: 8px 0 12px; }
 .schedule-intro p { max-width: 740px; line-height: 1.8; }
 .schedule-toolbar, .schedule-actions { display: flex; gap: 8px; flex-wrap: wrap; }

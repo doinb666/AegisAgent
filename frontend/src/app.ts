@@ -12,6 +12,7 @@ import { initializeTaskInputs } from "./task-inputs";
 import { initializeModelParameters } from "./model-parameters";
 import { initializeModelOutput } from "./model-output";
 import { initializeFileChanges } from "./file-changes";
+import { initializePlanProgress } from "./plan-progress";
 
 const $ = (id: string): any => document.getElementById(id);
 const apiRoot = "/api/v1";
@@ -37,6 +38,7 @@ const taskInputs = initializeTaskInputs({api, identity: () => state.token, messa
 const modelParameters = initializeModelParameters(() => $("model").value);
 const modelOutput = initializeModelOutput($("conversation"));
 const fileChanges = initializeFileChanges();
+const planProgress = initializePlanProgress();
 const projectThreads = initializeProjectThreads({
   api, identity: () => state.token, canWrite, select: selectThread, notice,
   changed: thread => {
@@ -246,6 +248,7 @@ function renderRunMeta(run) {
   $("run-meta").textContent=`步骤 ${run.step || 0}\nTrace ${run.trace_id}\n模型 ${route?.label || run.model || "自动选择"}\n协作方式 ${collaboration}\n代码目录 ${projectMode}`;
 }
 function renderRun(run) {
+  planProgress.settle(run.status);
   modelOutput.settle(run.status);
   taskInputs.showRun(run);
   state.run=run; state.session=run.session_id;
@@ -265,6 +268,7 @@ function renderRun(run) {
   $("conversation").scrollTop=$("conversation").scrollHeight;
 }
 async function openRun(id) {
+  planProgress.clear();
   fileChanges.clear();
   modelOutput.clear();
   taskInputs.showRun(null);
@@ -303,9 +307,11 @@ async function openRun(id) {
 }
 function addEvent(id,type,data) {
   if(id<=state.cursor) return; state.cursor=id;
+  const planAccepted = planProgress.accept(type,data);
   if(['completed','failed','cancelled','interrupted'].includes(type)) {
     fileChanges.clear();
     modelOutput.settle(type);
+    planProgress.settle(type);
     if(state.run && ['queued','running','waiting_approval'].includes(state.run.status)) {
       state.run.status=type;
       $("run-status").textContent=statuses[type];$("run-status").dataset.status=type;
@@ -324,7 +330,7 @@ function addEvent(id,type,data) {
     modelOutput.accept(type,data,['queued','running'].includes(state.run?.status));
     if(type==="model_output_delta")return;
   }
-  $("timeline").append(WorkspaceUI.eventRow(id,type,data,statuses));
+  $("timeline").append(WorkspaceUI.eventRow(id,type,data,statuses,planAccepted));
   WorkspaceUI.renderCollaboration(type,data,childId=>guard(()=>openRun(childId)));
 }
 async function watch(id,generation,token) {
@@ -366,6 +372,7 @@ async function watch(id,generation,token) {
   }
 }
 function newTask() {
+  planProgress.clear();
   fileChanges.clear();
   modelOutput.clear();
   modelParameters.reset();
@@ -441,7 +448,7 @@ async function showView(view) {
   if(view==="chat" && state.view==="chat")return;
   if(view==="chat" && state.view!=="chat" && state.run)return openRun(state.run.id);
   state.view=view;state.viewGeneration++;state.assetsGeneration++;
-  if(view!=="chat"){fileChanges.clear();modelOutput.clear();state.generation++;state.stream?.abort();WorkspaceUI.clearFiles();setRunLoading(false);}
+  if(view!=="chat"){planProgress.clear();fileChanges.clear();modelOutput.clear();state.generation++;state.stream?.abort();WorkspaceUI.clearFiles();setRunLoading(false);}
   const titles: Record<string, string>={chat:"任务空间",projects:"项目",memories:"长期记忆",skills:"技能库",documents:"知识库",schedules:"定时任务",templates:"任务模板",settings:"能力与设置"};
   $("view-title").textContent=titles[view]; $("location").textContent=titles[view];
   $("chat-view").hidden=view!=="chat"; $("settings-view").hidden=view!=="settings";
@@ -473,7 +480,7 @@ const navigation = initializeNavigation(() => Boolean(state.user), newTask, view
 function updateModeHint(): void {
   const hints: Record<string, string> = {
     react: "直接执行：边处理边调用工具，适合明确的小任务。",
-    plan: "先规划：先拆解步骤再执行，适合需要多步处理的目标。",
+    plan: "逐步执行：先规划顺序步骤，逐节点核对回答与工具证据；结构通过仍需核对正确性。",
     reflection: "审查回答：核对回答质量与潜在问题。",
   };
   $("mode-hint").textContent = hints[$("mode").value] || hints.react;

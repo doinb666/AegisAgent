@@ -193,6 +193,14 @@
     </main>
     <aside id="inspector" class="inspector" aria-label="任务审查"><div class="inspector-heading"><span class="eyebrow">任务审查</span><h3>运行与证据</h3></div>
       <div id="run-status" class="run-status">尚未开始任务</div><div id="run-meta" class="run-meta"></div>
+      <section id="plan-progress" class="plan-progress" aria-labelledby="plan-heading" hidden>
+        <div class="section-caption"><h4 id="plan-heading">计划进度</h4></div>
+        <p id="plan-summary" class="plan-summary"></p>
+        <p class="muted">结构契约通过，结果正确性仍需核对。</p>
+        <ol id="plan-nodes" class="plan-nodes"></ol>
+        <div id="plan-history" class="plan-history" hidden></div>
+        <p id="plan-live" class="sr-only" role="status" aria-live="polite" aria-atomic="true"></p>
+      </section>
       <div id="approval" class="approval" hidden><h4>需要你的批准</h4><p>请核对工具及完整参数。批准仅对本次操作有效。</p>
         <section id="file-change" class="file-change" aria-labelledby="file-change-title" hidden>
           <h5 id="file-change-title"></h5><p id="file-change-summary" class="muted"></p>

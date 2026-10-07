@@ -1,6 +1,7 @@
 "use strict";
 
 import WorkspaceOptions from "./workspace-options";
+import { isPlanEvent, publicPlanEvent } from "./plan-progress";
 
 // 展示层只创建安全文本节点，不解释模型或文件返回的 HTML。
 const WorkspaceUI = (() => {
@@ -116,12 +117,33 @@ const WorkspaceUI = (() => {
     } catch (error) { if (valid()) byId("file-list").textContent = `文件列表读取失败：${error.message}`; }
     finally { if (valid()) byId("files-refresh").disabled = false; }
   }
-  function eventRow(id, type, data, statuses) {
+  function eventRow(id, type, data, statuses, planAccepted = false) {
+    const planned = isPlanEvent(type);
+    const publicData = planned ? publicPlanEvent(type, data) : data;
+    if (planned && (!publicData || !planAccepted)) {
+      const row = node("li");
+      row.append(node("span", `#${id} · 计划事件未采用`),
+        node("div", "公开契约无效、修订过期或节点未知，当前进度保持不变。"));
+      return row;
+    }
+    // 计划事件只使用经同一契约校验的公开投影；旧事件保留既有证据行为。
+    data = publicData;
     const names = {queued: "任务已排队", running: "任务开始推进", assets_recalled: "召回本人记忆与能力", bootstrap: "加载任务上下文", model: "收到模型响应", model_usage: "记录模型参数与用量", model_request: "请求模型", model_response: "收到模型响应", tool_started: "开始工具调用", tool_call: "准备工具调用", tool_result: "收到工具结果", risk_review: "记录独立风险审查", reflection: "记录回答复核", waiting_approval: "请求审批", approval: "记录审批决定", feedback: "记录任务反馈", plan: "生成执行计划", plan_fallback: "规划失败，记录回退原因", checkpoint: "保存执行进度"};
-    const outputNames = {model_output_started: "开始公开输出", model_output_retracted: "撤销临时输出", model_output_finished: "公开输出已收齐"};
+    const outputNames = {model_output_started: "开始公开输出", model_output_retracted: "撤销临时输出", model_output_finished: "公开输出已收齐",
+      plan_replanned: "重新规划剩余步骤", node_started: "开始计划步骤", node_accepting: "核对步骤结构契约", node_accepted: "记录步骤结构验收", tool_reused: "记录历史工具来源"};
     const caption = outputNames[type] || names[type] || statuses[type] || "保存任务事件";
     let description = caption;
-    if (data.name) description += `：${data.name}`;
+    if (["plan", "plan_replanned"].includes(type) && Number.isSafeInteger(data.revision) && data.revision >= 0
+      && data.revision <= 2147483647 && Array.isArray(data.nodes) && data.nodes.length <= 8) {
+      description += `：修订 ${data.revision}，${data.nodes.length} 个顺序步骤`;
+    }
+    if (type === "plan_fallback" && typeof data.reason === "string") description += `：${data.reason.slice(0, 300)}`;
+    if (["node_started", "node_accepting", "node_accepted"].includes(type) && typeof data.node_id === "string") {
+      description += `：${data.node_id.slice(0, 256)}`;
+      if (type === "node_accepted") description += data.contract_satisfied === true ? "，结构契约通过，结果正确性仍需核对" : "，结构契约未通过";
+    }
+    if (type === "tool_reused") description += "，待节点验收匹配来源；不表示重新执行";
+    if (typeof data.name === "string") description += `：${data.name.slice(0, 256)}`;
     if (type === "approval") description += data.approved ? "，已批准" : "，已拒绝";
     if (type === "feedback") description += data.success ? "，目标已达成" : "，仍需改进";
     if (data.error) description += `：${String(data.error).slice(0,120)}`;
@@ -130,7 +152,7 @@ const WorkspaceUI = (() => {
     }
     const row = node("li"); row.append(node("span", `#${id} · ${caption}`), node("div", description));
     const details = node("details"), evidence = node("pre", JSON.stringify(data, null, 2));
-    details.append(node("summary", "查看完整事件证据"), evidence); row.append(details);
+    details.append(node("summary", planned ? "查看公开计划事件证据" : "查看完整事件证据"), evidence); row.append(details);
     return row;
   }
   const configureCollaboration = (...args: any[]) => (

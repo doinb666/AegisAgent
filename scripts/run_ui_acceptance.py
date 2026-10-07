@@ -28,6 +28,7 @@ def main():
         "scripts.model_parameters_browser_acceptance",
         "scripts.model_output_browser_acceptance",
         "scripts.file_changes_browser_acceptance",
+        "scripts.plan_browser_acceptance",
     }
     if not set(args.module) <= allowed:
         parser.error("请选择已登记的验收模块")
@@ -40,19 +41,32 @@ def main():
             "AEGIS_UI_TEST_DATA": str(Path(temporary) / "data"),
             "PYTHONUTF8": "1",
             "PYTHONIOENCODING": "utf-8",
+            "AEGIS_UI_PLAN": "1" if "scripts.plan_browser_acceptance" in args.module else "0",
         }
         with (Path(temporary) / "server.log").open("w", encoding="utf-8") as log:
-            process = subprocess.Popen(
-                [
+            command = [
+                sys.executable,
+                "-m",
+                "uvicorn",
+                "tests.ui_server:app",
+                "--host",
+                "127.0.0.1",
+                "--port",
+                str(port),
+            ]
+            if os.name == "nt" and environment["AEGIS_UI_PLAN"] == "1":
+                # Windows Proactor偶发中止本机accept；仅计划验收选择Selector，不改变生产启动。
+                command = [
                     sys.executable,
-                    "-m",
-                    "uvicorn",
-                    "tests.ui_server:app",
-                    "--host",
-                    "127.0.0.1",
-                    "--port",
+                    "-c",
+                    "import asyncio, sys, uvicorn; "
+                    "asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy()); "
+                    "uvicorn.run('tests.ui_server:app', host='127.0.0.1', "
+                    "port=int(sys.argv[1]), loop='asyncio')",
                     str(port),
-                ],
+                ]
+            process = subprocess.Popen(
+                command,
                 env=environment,
                 stdout=log,
                 stderr=log,
