@@ -23,6 +23,7 @@ from .notifications import NotificationService
 from .plan_runtime import require_no_risk_deny, reserve_cost, shared
 from .schedules import ScheduleService
 from .security import canonical, digest, password_hash, password_matches
+from .skill_revision import NAMESPACE, lock_user, register_request
 from .store import Store, run_dict, scope, uid
 from .task_inputs import (
     DOCUMENT_SNAPSHOT_PREFIX,
@@ -852,12 +853,10 @@ class HarnessService(AssetService):
     async def feedback(self, principal, run_id, success, note=""):
         if principal.role == "viewer":
             raise HarnessError(403, "viewer无权提交反馈或激活资产")
-        async with self.store.write_lock, self.store.sessions.begin() as session:
-            await session.execute(
-                update(User)
-                .where(User.id == principal.user_id, User.tenant_id == principal.tenant_id)
-                .values(role=User.role)
-            )
+        async with self.store.transaction() as session:
+            user = await lock_user(session, principal.user_id, principal.tenant_id)
+            if user is None or user.tenant_id != principal.tenant_id or user.role == "viewer":
+                raise HarnessError(403, "当前身份无权提交反馈")
             run = await self.store.owned(session, Run, run_id, principal)
             feedback = await session.scalar(
                 select(Feedback).where(*scope(Feedback, principal), Feedback.run_id == run_id)
@@ -871,6 +870,10 @@ class HarnessService(AssetService):
                 )
                 session.add(feedback)
             feedback.success, feedback.note = success, note
+            await register_request(session, self.store, run, principal, success, note)
+            revision_sources = {
+                ref["asset_id"] for ref in run.config.get(NAMESPACE, {}).get("selected", [])
+            }
             actual_evidence = (
                 await session.scalars(
                     select(ToolCall).where(
@@ -884,6 +887,8 @@ class HarnessService(AssetService):
                 select(Asset).where(*scope(Asset, principal), Asset.kind == "skill")
             )
             for asset in assets:
+                if asset.id in revision_sources:
+                    continue
                 if asset.attributes.get("source_run_id") != run_id or asset.status == "retired":
                     continue
                 if asset.attributes.get("extracted") or asset.attributes.get("edited"):

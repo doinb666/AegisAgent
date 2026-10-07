@@ -8,8 +8,9 @@ from loguru import logger
 from sqlalchemy import or_, select, update
 
 from .errors import Principal
-from .models import Asset, Run, ToolCall, User
+from .models import Asset, Run, ToolCall
 from .security import canonical, digest
+from .skill_revision import SkillRevisionWorker, lock_user
 from .store import scope, uid
 
 
@@ -19,9 +20,10 @@ class EvolutionWorker:
         self.store = service.store
         self.owner = uid()
         self.task = None
+        self.revisions = SkillRevisionWorker(service)
 
     def start(self):
-        if self.service.settings.evolution_enabled and self.service.model_router:
+        if self.service.settings.evolution_enabled:
             self.task = asyncio.create_task(self.loop())
 
     async def close(self):
@@ -39,23 +41,33 @@ class EvolutionWorker:
                 await asyncio.sleep(2)
 
     async def process_one(self):
+        if await self.revisions.process_one():
+            return True
+        if not self.service.model_router:
+            return False
         now = time.time()
-        async with self.store.write_lock, self.store.sessions.begin() as session:
+        async with self.store.transaction() as session:
             eligible = or_(
                 Run.config["evolution_state"].as_string().is_(None),
                 (Run.config["evolution_state"].as_string() == "started")
                 & (Run.config["evolution_lease"].as_float() < now),
             )
-            run = await session.scalar(
-                select(Run)
-                .where(
-                    Run.status.in_(("completed", "failed")),
-                    eligible,
+            row = (
+                await session.execute(
+                    select(Run.id, Run.owner_id, Run.tenant_id)
+                    .where(
+                        Run.status.in_(("completed", "failed")),
+                        eligible,
+                    )
+                    .order_by(Run.created)
+                    .limit(1)
                 )
-                .order_by(Run.created)
-                .limit(1)
-            )
-            if run is None:
+            ).first()
+            if row is None:
+                return False
+            user = await lock_user(session, row.owner_id, row.tenant_id)
+            run = await session.get(Run, row.id, populate_existing=True)
+            if user is None or user.tenant_id != row.tenant_id:
                 return False
             config = {
                 **run.config,
@@ -73,7 +85,6 @@ class EvolutionWorker:
             )
             if not acquired.rowcount:
                 return True
-            user = await session.get(User, run.owner_id)
             principal = Principal(user.id, user.tenant_id, user.role)
             tools = (
                 await session.scalars(
@@ -140,10 +151,8 @@ class EvolutionWorker:
                     raise ValueError("经验候选格式无效")
         except Exception:
             state, proposed = "skipped", []
-        async with self.store.write_lock, self.store.sessions.begin() as session:
-            await session.execute(
-                update(User).where(User.id == principal.user_id).values(role=User.role)
-            )
+        async with self.store.transaction() as session:
+            await lock_user(session, principal.user_id, principal.tenant_id)
             current = await self.store.owned(session, Run, run_id, principal)
             finalized = await session.execute(
                 update(Run)

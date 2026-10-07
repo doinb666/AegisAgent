@@ -8,6 +8,7 @@ from .errors import HarnessError
 from .models import Asset, AssetVersion, User
 from .security import canonical, digest
 from .skill_files import SkillFileService, export_bundle, string_list, validate_metadata
+from .skill_revision import PROTECTED_METADATA
 from .store import asset_dict, scope, uid
 
 
@@ -102,7 +103,7 @@ class AssetService(SkillFileService):
         metadata = dict(validate_metadata({} if metadata is None else metadata))
         if "tools" in metadata:
             metadata["tools"] = string_list(metadata["tools"], "tools", 128)
-        reserved = {
+        reserved = PROTECTED_METADATA | {
             "source_run_id",
             "tool_evidence",
             "manual_verified",

@@ -144,7 +144,7 @@ class Store:
     def emit(self, session, run, event_type, data):
         marker = run.config.get("model_inflight")
         terminal = event_type in TERMINAL_STATUSES or run.status in TERMINAL_STATUSES
-        if terminal and run.config.get("plan"):
+        if event_type in TERMINAL_STATUSES and run.config.get("plan"):
             plan = deepcopy(run.config["plan"])
             plan["status"] = "completed" if event_type == "completed" else "blocked"
             if event_type != "completed":
