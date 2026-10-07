@@ -23,6 +23,7 @@ def main():
         "scripts.layout_browser_acceptance",
         "scripts.assets_browser_acceptance",
         "scripts.skill_browser_acceptance",
+        "scripts.schedules_browser_acceptance",
     }
     if not set(args.module) <= allowed:
         parser.error("请选择已登记的验收模块")

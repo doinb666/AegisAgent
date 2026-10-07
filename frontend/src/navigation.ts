@@ -62,6 +62,7 @@ export function initializeNavigation(
       ["memories", "长期记忆", "审阅个人偏好、约束与经验"],
       ["skills", "技能库", "Skills：审阅、修订和复用技能"],
       ["documents", "知识库", "上传与检索私有资料"],
+      ["schedules", "定时任务", "安排只读任务、暂停计划与查看触发记录"],
       ["settings", "能力与设置", "查看模型接入和企业成员"],
     ].map(([view, title, description]) => ({title, description, run: () => showView(view)})),
     {title: "搜索任务", description: "按内容和状态查找历史任务", run: () => {

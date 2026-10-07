@@ -7,6 +7,7 @@ import { createThreadHistory } from "./thread-view";
 import { initializeProjectThreads, type Thread } from "./project-threads";
 import { initializeNotifications } from "./notifications";
 import { initializeAssetBrowser } from "./asset-browser";
+import { initializeSchedules } from "./schedules";
 
 const $ = (id: string): any => document.getElementById(id);
 const apiRoot = "/api/v1";
@@ -21,6 +22,7 @@ function notice(text) { $("notice").textContent = text; }
 const canWrite = () => state.user && state.user.role !== "viewer";
 const assetBrowser = initializeAssetBrowser(renderAssets);
 const notifications = initializeNotifications({api, identity: () => state.token, openRun});
+const schedules = initializeSchedules({api, identity: () => state.token, canWrite, openRun});
 const projectThreads = initializeProjectThreads({
   api, identity: () => state.token, canWrite, select: selectThread, notice,
   changed: thread => {
@@ -86,6 +88,7 @@ async function guardForm(action: () => Promise<void>, button: HTMLButtonElement,
   } finally { if (token === state.token) button.disabled = false; }
 }
 function resetLogin() {
+  schedules.clear();
   notifications.clear();
   projectThreads.clear();
   navigation.close();
@@ -136,6 +139,8 @@ async function enter(user) {
   WorkspaceUI.configureCollaboration(cap,canWrite());
   projectThreads.configure(cap);
   notifications.configure(cap);
+  schedules.configure(cap);
+  schedules.show(state.view==="schedules");
   $("member-form").closest("details").hidden=cap.role!=="admin";
   const bootstrap=await api("/auth/me");
   if(token!==state.token)return;
@@ -369,17 +374,19 @@ async function showView(view) {
   if(view==="chat" && state.view!=="chat" && state.run)return openRun(state.run.id);
   state.view=view;state.viewGeneration++;state.assetsGeneration++;
   if(view!=="chat"){state.generation++;state.stream?.abort();WorkspaceUI.clearFiles();setRunLoading(false);}
-  const titles: Record<string, string>={chat:"任务空间",projects:"项目",memories:"长期记忆",skills:"技能库",documents:"知识库",settings:"能力与设置"};
+  const titles: Record<string, string>={chat:"任务空间",projects:"项目",memories:"长期记忆",skills:"技能库",documents:"知识库",schedules:"定时任务",settings:"能力与设置"};
   $("view-title").textContent=titles[view]; $("location").textContent=titles[view];
   $("chat-view").hidden=view!=="chat"; $("settings-view").hidden=view!=="settings";
-  $("assets-view").hidden=['chat','settings'].includes(view);
+  $("assets-view").hidden=['chat','settings','schedules'].includes(view);
+  $("schedules-view").hidden=view!=="schedules";
+  schedules.show(view==="schedules");
   document.querySelectorAll<HTMLElement>("[data-view]").forEach(button => {
     const current = button.dataset.view === view;
     button.classList.toggle("selected", current);
     if (current) button.setAttribute("aria-current", "page");
     else button.removeAttribute("aria-current");
   });
-  if(!['chat','settings'].includes(view)) {
+  if(!['chat','settings','schedules'].includes(view)) {
     assetBrowser.reset();state.assets=[];
     $("skill-directory-filter").value="";
     for (const id of ["asset-error", "upload-error"]) $(id).textContent="";
