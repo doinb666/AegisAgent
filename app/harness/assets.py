@@ -1,22 +1,14 @@
 """版本资产与基于词法证据的有界召回。"""
 
-import re
-
 from sqlalchemy import select, update
 
+from .asset_recall import recall
+from .asset_recall import terms as terms
 from .errors import HarnessError
 from .models import Asset, AssetVersion, User
 from .security import canonical, digest
 from .skill_files import SkillFileService, export_bundle, string_list, validate_metadata
 from .store import asset_dict, scope, uid
-
-
-def terms(text):
-    words = set(re.findall(r"[a-z0-9_]{2,}|[\u4e00-\u9fff]+", text.lower()))
-    for word in list(words):
-        if re.search(r"[\u4e00-\u9fff]", word):
-            words.update(word[index : index + 2] for index in range(len(word) - 1))
-    return words
 
 
 class AssetService(SkillFileService):
@@ -282,68 +274,4 @@ class AssetService(SkillFileService):
             return [version.snapshot for version in versions]
 
     async def recall(self, principal, query, allowed_tools=None):
-        async with self.store.sessions() as session:
-            rows = (
-                await session.scalars(
-                    select(Asset)
-                    .where(
-                        *scope(Asset, principal),
-                        Asset.status == "active",
-                        Asset.kind.not_in(("document", "artifact", "project")),
-                    )
-                    .order_by(Asset.name, Asset.id)
-                    .limit(500)
-                )
-            ).all()
-            candidates = [asset_dict(row) for row in rows]
-        query_terms = terms(query)
-        shortlist = []
-        for asset in candidates:
-            try:
-                if asset["kind"] == "skill":
-                    bundle = export_bundle(asset)
-                    metadata = {
-                        **{
-                            key: value
-                            for key, value in asset["metadata"].items()
-                            if key != "resources"
-                        },
-                        "resource_paths": list(bundle["resources"]),
-                    }
-                    asset = {**asset, "metadata": metadata}
-                else:
-                    metadata = validate_metadata(asset["metadata"])
-                required_tools = set(string_list(metadata.get("tools", []), "tools", 128))
-            except HarnessError:
-                # 隔离旧记录与通用接口产生的异常元信息，避免挤掉其他有效候选。
-                continue
-            if allowed_tools is not None and not required_tools.issubset(set(allowed_tools)):
-                continue
-            descriptor = terms(
-                asset["name"]
-                + " "
-                + str(metadata.get("tags", []))
-                + " "
-                + str(metadata.get("examples", []))
-                + " "
-                + str(metadata.get("boundaries", []))
-                + " "
-                + str(metadata.get("trigger_conditions", {}))
-                + " "
-                + str(metadata.get("description", ""))
-                + " "
-                + str(metadata.get("directory", ""))
-            )
-            score = len(query_terms & descriptor)
-            if score or asset["kind"] in {"preference", "constraint", "profile"}:
-                shortlist.append((score, asset))
-        # 第一阶段只按目录元信息收敛候选；第二阶段才读取正文做有界词法精排。
-        shortlist.sort(key=lambda item: (-item[0], item[1]["id"]))
-        scored = []
-        for coarse_score, asset in shortlist[:32]:
-            score = coarse_score * 3 + len(query_terms & terms(asset["content"][:3000]))
-            score += 2 if asset["metadata"].get("user_verified") else 0
-            score += 100 if asset["kind"] in {"preference", "constraint", "profile"} else 0
-            scored.append((score, asset))
-        scored.sort(key=lambda item: (-item[0], item[1]["id"]))
-        return [asset for _, asset in scored[:8]]
+        return await recall(self.store, principal, query, allowed_tools)
