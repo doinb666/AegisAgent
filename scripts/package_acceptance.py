@@ -8,6 +8,7 @@ import subprocess
 import sys
 import tempfile
 import time
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import httpx
@@ -26,6 +27,48 @@ def wait_ready(client, process):
             pass
         time.sleep(0.2)
     raise TimeoutError("安装包启动超过 60 秒")
+
+
+def verify_task_inputs(client, headers, prepare):
+    templates = client.get("/api/v1/task-templates", headers=headers)
+    assert templates.status_code == 200 and len(templates.json()) == 4
+    assert client.get("/api/v1/mcp/servers", headers=headers).json() == []
+    if prepare:
+        document = client.post(
+            "/api/v1/documents/upload",
+            headers={**headers, "Idempotency-Key": "package-document"},
+            files={
+                "file": (
+                    "安装验证资料.md",
+                    "# 安装证据\n重启后保留本人资料。".encode(),
+                    "text/markdown",
+                )
+            },
+        )
+        assert document.status_code == 201
+        schedule = client.post(
+            "/api/v1/schedules",
+            headers={**headers, "Idempotency-Key": "package-schedule"},
+            json={
+                "title": "安装包暂停计划",
+                "message": "只读核对安装证据",
+                "scheduled_at": (datetime.now(UTC) + timedelta(hours=1)).isoformat(),
+            },
+        )
+        assert schedule.status_code == 201
+        paused = client.patch(
+            f"/api/v1/schedules/{schedule.json()['id']}",
+            headers=headers,
+            json={"action": "pause", "expected_version": schedule.json()["version"]},
+        )
+        assert paused.status_code == 200 and paused.json()["status"] == "paused"
+    references = client.get("/api/v1/documents/references", headers=headers)
+    assert references.status_code == 200
+    assert len(references.json()) == 1 and references.json()[0]["name"] == "安装验证资料.md"
+    schedules = client.get("/api/v1/schedules", headers=headers).json()
+    assert len(schedules) == 1 and schedules[0]["status"] == "paused"
+    assert schedules[0]["title"] == "安装包暂停计划"
+    return references.json()[0]["id"]
 
 
 def verify_session(client, prepare):
@@ -58,6 +101,10 @@ def verify_session(client, prepare):
     assert details["collaboration"]["project_modes"] == [], "未绑定仓库时应隐藏 Git 模式"
     assert details["model_protocols"] == ["openai", "custom", "anthropic", "azure", "ollama"]
     assert details["threads"]["enabled"] and details["notifications"]["enabled"]
+    assert details["task_inputs"]["enabled"] and details["schedules"]["enabled"]
+    assert not details["model_parameters"]["temperature"]
+    assert not details["model_parameters"]["output_tokens"]
+    document_id = verify_task_inputs(client, headers, prepare)
     if prepare:
         project = client.post(
             "/api/v1/assets",
@@ -90,6 +137,7 @@ def verify_session(client, prepare):
             json={
                 "message": "未配置模型时应明确失败",
                 "thread_id": threads[0]["id"],
+                "document_ids": [document_id],
             },
         )
         assert response.status_code == 202
@@ -100,6 +148,9 @@ def verify_session(client, prepare):
                 break
             assert time.monotonic() < deadline, "缺模型任务未明确失败"
             time.sleep(0.1)
+    runs = client.get("/api/v1/runs", headers=headers).json()
+    assert len(runs) == 1 and runs[0]["document_references"][0]["id"] == document_id
+    assert runs[0]["model_parameters"] == {}
     notifications = client.get("/api/v1/notifications", headers=headers).json()
     assert len(notifications) == 1 and notifications[0]["type"] == "failed"
     if prepare:
@@ -165,7 +216,7 @@ def main():
                 timeout=120,
             )
             command = [str(target / "AegisCode.exe")]
-        for marker in ("--migrate-threads", "--migrate-notifications"):
+        for marker in ("--migrate-threads", "--migrate-notifications", "--migrate-schedules"):
             subprocess.run(
                 [*command, marker, "--help"],
                 cwd=root,
@@ -174,12 +225,19 @@ def main():
                 check=True,
                 timeout=30,
             )
-        command += ["--no-browser", "--port", str(args.port), "--data-dir", str(root / "data")]
+        service_command = [
+            *command,
+            "--no-browser",
+            "--port",
+            str(args.port),
+            "--data-dir",
+            str(root / "data"),
+        ]
         with httpx.Client(base_url=f"http://127.0.0.1:{args.port}", timeout=5) as client:
             for prepare in (True, False):
                 with (root / "service.log").open("ab") as log:
                     process = subprocess.Popen(
-                        command,
+                        service_command,
                         cwd=root,
                         env=environment,
                         stdout=log,
@@ -209,8 +267,18 @@ def main():
                             else:
                                 process.terminate()
                         process.wait(timeout=30)
+                if prepare:
+                    # 服务已退出后执行真实迁移预览，验证安装包内包含迁移运行模块。
+                    subprocess.run(
+                        [*command, "--migrate-schedules", "--data-dir", str(root / "data")],
+                        cwd=root,
+                        env=environment,
+                        capture_output=True,
+                        check=True,
+                        timeout=60,
+                    )
             print(
-                "安装包验收通过：独立中文目录、静态校验、登录、项目多会话、失败通知、已读持久化、迁移入口、重启后偏好保留"
+                "安装包验收通过：独立中文目录、静态校验、模板、资料快照、暂停计划、模型能力、登录、多会话、通知、迁移入口及重启持久化"
             )
 
 
