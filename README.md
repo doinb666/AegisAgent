@@ -4,7 +4,7 @@
 
 AegisCode 面向个人开发者和企业成员：描述目标，由 Agent 规划、调用工具并保留执行证据；需要写文件、运行代码或调用外部服务时，由用户批准。经过审阅的偏好、约束和任务经验可以跨会话复用。
 
-快速开始：[下载 Windows 安装器](https://github.com/doinb666/AegisAgent/releases/download/v0.2.8/AegisCode-Setup.exe) · [下载便携版](https://github.com/doinb666/AegisAgent/releases/download/v0.2.8/AegisCode-portable.zip) · [全部安装方式](#安装与启动)。
+快速开始：[下载 Windows 安装器](https://github.com/doinb666/AegisAgent/releases/download/v0.2.9/AegisCode-Setup.exe) · [下载便携版](https://github.com/doinb666/AegisAgent/releases/download/v0.2.9/AegisCode-portable.zip) · [全部安装方式](#安装与启动)。
 
 [安装与启动](#安装与启动) · [使用场景与截图](#使用场景与截图) · [模型配置](#模型配置) · [使用方式](#使用方式) · [项目亮点](#项目亮点) · [使用手册](docs/使用手册.md)
 
@@ -12,7 +12,7 @@ AegisCode 面向个人开发者和企业成员：描述目标，由 Agent 规划
 
 ## 界面与操作
 
-暖灰导航、柔白会话区、浅绿记忆与选中状态、冷灰审查区，配合石墨深色主题。正式界面使用 **TypeScript + Vite、HTML/CSS**，随 FastAPI 和 EXE 提供静态页面。AegisCode 把个人长期记忆、Skill 审阅和工具证据保留在同一工作台。公开 **0.2.8 安装器、便携版与 wheel 已包含新版布局和内容管理界面**。
+暖灰导航、柔白会话区、浅绿记忆与选中状态、冷灰审查区，配合石墨深色主题。正式界面使用 **TypeScript + Vite、HTML/CSS**，随 FastAPI 和 EXE 提供静态页面。AegisCode 把个人长期记忆、Skill 审阅和工具证据保留在同一工作台。公开 **0.2.9 安装器、便携版与 wheel 已包含新版布局、内容管理、真实增量预览和文件差异审批**。
 
 - 顶部按钮折叠两侧面板，聚焦当前线程；窄屏默认收起导航。
 - 侧栏「项目会话／任务历史」切换记录类型；项目树刷新保留展开状态，当前会话高亮。账号与退出入口固定在侧栏底部。
@@ -22,11 +22,11 @@ AegisCode 面向个人开发者和企业成员：描述目标，由 Agent 规划
 - 当前源码支持同一会话的历史问答与分页加载；选中旧任务时只展示截至该任务的问答，子任务保留独立视图。
 - 当前源码支持项目下多个独立会话、重命名、归档与恢复；新库直接使用，旧库先备份迁移，见[项目会话使用指南](docs/项目会话使用指南.md)。
 - 顶部站内通知提供完成、失败与审批提醒；已读可跨重启保留，点击定位任务，见[通知使用指南](docs/站内通知使用指南.md)。
-- 「定时任务」：安排一次性或固定间隔的只读任务，支持暂停、取消与持久触发记录；旧库需显式迁移。源码与0.2.8下载包均提供，见[定时任务指南](docs/定时任务使用指南.md)。
-- 「任务模板」和「引用本人资料」：四种模板预填目标，最多3份私有资料保留来源版本与截断提示；设置页可查看本人授权MCP配置。源码与0.2.8下载包均提供，见[模板与资料使用指南](docs/任务模板与资料引用指南.md)。
-- 「模型参数」：按来源能力调整温度、输出上限与推理强度，切换备用模型时保留全部请求约束；源码与0.2.8下载包均提供，旧服务自动隐藏此入口，见[模型参数使用指南](docs/模型参数使用指南.md)。
-- 「模型输出预览」：当前源码消费真实上游文本片段，分批显示在独立临时区域；工具调用时撤销预览，最终答复经任务核对后保存。刷新只重读原任务，0.2.8下载包仍使用完整响应，见[增量输出指南](docs/真实模型增量输出指南.md)。
-- 「文件修改审阅」：当前源码展示新建／修改的差异和前后对照，批准绑定原文件版本；版本变化或出现同名文件时拒绝覆盖。0.2.8下载包不含此入口，见[文件审阅指南](docs/文件差异审阅指南.md)。
+- 「定时任务」：安排一次性或固定间隔的只读任务，支持暂停、取消与持久触发记录；旧库需显式迁移。源码与0.2.9下载包均提供，见[定时任务指南](docs/定时任务使用指南.md)。
+- 「任务模板」和「引用本人资料」：四种模板预填目标，最多3份私有资料保留来源版本与截断提示；设置页可查看本人授权MCP配置。源码与0.2.9下载包均提供，见[模板与资料使用指南](docs/任务模板与资料引用指南.md)。
+- 「模型参数」：按来源能力调整温度、输出上限与推理强度，切换备用模型时保留全部请求约束；源码与0.2.9下载包均提供，旧服务自动隐藏此入口，见[模型参数使用指南](docs/模型参数使用指南.md)。
+- 「模型输出预览」：消费真实上游文本片段，分批显示在独立临时区域；工具调用时撤销预览，最终答复经任务核对后保存。刷新只重读原任务，源码与0.2.9下载包均提供，见[增量输出指南](docs/真实模型增量输出指南.md)。
+- 「文件修改审阅」：展示新建／修改的差异和前后对照，批准绑定原文件版本；版本变化或出现同名文件时拒绝覆盖。源码与0.2.9下载包均提供，见[文件审阅指南](docs/文件差异审阅指南.md)。
 - 协作选项接通 Fork、Agent Team 与审批后的 Worktree/代码副本准备；主控保留控制权，子任务目前只读。
 - 记忆、技能、项目与知识库提供关键词和状态筛选，首批展示 24 条，长正文按需展开；表单失败保留输入并就近提示。搜索范围与操作见[内容管理指南](docs/内容管理指南.md)。
 
@@ -45,11 +45,11 @@ AegisCode 面向个人开发者和企业成员：描述目标，由 Agent 规划
 
 ## 使用场景与截图
 
-**先看到模型输出，再核对最终结果。** 支持增量协议的来源将真实文本片段送到工作台；预览标明尚未验收，内部推理和工具参数碎片不展示。下图来自真实本机HTTP与确定性延迟模型，用于验证交互，不能代表商业模型质量或延迟。此项为0.2.8发布后的源码能力。
+**先看到模型输出，再核对最终结果。** 支持增量协议的来源将真实文本片段送到工作台；预览标明尚未验收，内部推理和工具参数碎片不展示。下图来自真实本机HTTP与确定性延迟模型，用于验证交互，不能代表商业模型质量或延迟。源码与0.2.9下载包均提供。
 
 ![真实文本片段与未验收状态](docs/截图/增量输出/01-真实片段与未验收状态.png)
 
-**先审阅修改，再决定保存。** 工具拟写文件时查看差异、前后文本与截断提醒；服务端保存前再次核对冻结版本。审批期间文件已变更时，保留现有文件并返回拒绝原因。下图来自独立数据库、真实HTTP与确定性模型，仅展示交互；此项未包含在0.2.8下载包中。
+**先审阅修改，再决定保存。** 工具拟写文件时查看差异、前后文本与截断提醒；服务端保存前再次核对冻结版本。审批期间文件已变更时，保留现有文件并返回拒绝原因。下图来自独立数据库、真实HTTP与确定性模型，仅展示交互；源码与0.2.9下载包均提供。
 
 ![新建文件的差异与精确审批](docs/截图/文件差异/01-新建文件差异审批.png)
 
@@ -79,11 +79,11 @@ AegisCode 面向个人开发者和企业成员：描述目标，由 Agent 规划
 | 使用自己的模型服务 | 能力与设置 → 接入自己的模型服务 | 支持兼容接口、Anthropic、Azure、Ollama 和自定义来源，独立熔断与降级 |
 | 私有部署与日常使用 | EXE、源码／wheel、Docker | 同一套工作台覆盖个人本机与企业部署，资源按用户隔离 |
 
-**连续问答与代码阅读。** 打开一个任务即可查看此前问答；较长会话点击「加载更早的问答」。源码与 0.2.8 下载包均已提供。
+**连续问答与代码阅读。** 打开一个任务即可查看此前问答；较长会话点击「加载更早的问答」。源码与 0.2.9 下载包均已提供。
 
 ![连续问答与代码阅读](docs/截图/会话历史/04-当前代码问答.png)
 
-**项目内多会话。** 同一项目分别讨论权限边界、性能和测试；各会话保留自己的问答与运行证据。下图来自独立数据库、真实 HTTP 链路和确定性测试模型；源码与 0.2.8 下载包均已提供。
+**项目内多会话。** 同一项目分别讨论权限边界、性能和测试；各会话保留自己的问答与运行证据。下图来自独立数据库、真实 HTTP 链路和确定性测试模型；源码与 0.2.9 下载包均已提供。
 
 ![真实项目独立会话](docs/截图/项目会话/01-项目独立会话.png)
 
@@ -138,12 +138,15 @@ AegisCode 面向个人开发者和企业成员：描述目标，由 Agent 规划
 
 ### Windows 桌面使用
 
-当前版本 **0.2.8**：[版本说明与全部下载](https://github.com/doinb666/AegisAgent/releases/tag/v0.2.8)。
+当前版本 **0.2.9**：[版本说明与全部下载](https://github.com/doinb666/AegisAgent/releases/tag/v0.2.9)。Windows安装器和wheel已在独立中文目录验收，五项资产经无凭据公开下载核对，大小与SHA256均一致。
 
-- [Windows 安装器 EXE](https://github.com/doinb666/AegisAgent/releases/download/v0.2.8/AegisCode-Setup.exe)：安装到空目录后双击 AegisCode.exe。
-- [Windows 便携 ZIP](https://github.com/doinb666/AegisAgent/releases/download/v0.2.8/AegisCode-portable.zip)：解压并保留完整目录。
-- [Python wheel](https://github.com/doinb666/AegisAgent/releases/download/v0.2.8/aegiscode-0.2.8-py3-none-any.whl)：适合 Python 用户。
-- [SHA256 校验和](https://github.com/doinb666/AegisAgent/releases/download/v0.2.8/SHA256SUMS.txt)：使用 PowerShell `Get-FileHash 文件名 -Algorithm SHA256` 核对。
+- [Windows 安装器 EXE](https://github.com/doinb666/AegisAgent/releases/download/v0.2.9/AegisCode-Setup.exe)：安装到空目录后双击 AegisCode.exe。
+- [Windows 便携 ZIP](https://github.com/doinb666/AegisAgent/releases/download/v0.2.9/AegisCode-portable.zip)：解压并保留完整目录。
+- [Python wheel](https://github.com/doinb666/AegisAgent/releases/download/v0.2.9/aegiscode-0.2.9-py3-none-any.whl)：适合 Python 用户。
+- [源码 ZIP](https://github.com/doinb666/AegisAgent/releases/download/v0.2.9/AegisAgent-source-v0.2.9.zip)：与0.2.9安装包对应的源码快照。
+- [SHA256 校验和](https://github.com/doinb666/AegisAgent/releases/download/v0.2.9/SHA256SUMS.txt)：使用 PowerShell `Get-FileHash 文件名 -Algorithm SHA256` 核对。
+
+0.2.9已包含增量输出与文件审阅；GitHub主分支另有Skill轻量投影优化，尚未进入该冻结安装包。按需读取范围、SQLite版本要求及边界见[技能召回指南](docs/技能按需召回指南.md)。
 
 如需自行构建，在 Windows 执行：
 
@@ -199,7 +202,7 @@ python -m app.launcher
 .venv/Scripts/python.exe -m app.launcher --port 8001
 ```
 
-可添加 `--auto-port`：指定端口被占用时绑定空闲端口，并在日志显示实际地址。浏览器在本进程初始化完成后打开；初始化超过 60 秒会提示手动访问，不终止服务。0.2.8 下载包已包含这两项改进。
+可添加 `--auto-port`：指定端口被占用时绑定空闲端口，并在日志显示实际地址。浏览器在本进程初始化完成后打开；初始化超过 60 秒会提示手动访问，不终止服务。0.2.9 下载包已包含这两项改进。
 
 ```powershell
 .venv/Scripts/python.exe -m app.launcher --auto-port
@@ -211,7 +214,7 @@ wheel 构建与安装：
 python -m pip install ".[dev]"
 python scripts/build_wheel.py
 # 安装 dist 中实际生成的 aegiscode-版本号-py3-none-any.whl
-python -m pip install dist/aegiscode-0.2.8-py3-none-any.whl
+python -m pip install dist/aegiscode-0.2.9-py3-none-any.whl
 aegiscode
 ```
 
@@ -245,7 +248,7 @@ docker compose up --build -d
 .venv/Scripts/python.exe -m app.launcher --data-dir data
 ```
 
-0.2.8 安装包可用 `aegiscode --migrate-threads` 或 `AegisCode.exe --migrate-threads` 传入相同参数。PostgreSQL 先完成 `pg_dump`，再提供备份文件。通知表另用 `python -m app.harness.notification_migration` 预览／备份迁移，见[通知使用指南](docs/站内通知使用指南.md)。迁移保留旧任务与会话标识，重复执行不新增关联；详细 Docker 命令与恢复说明见[项目会话使用指南](docs/项目会话使用指南.md)。
+0.2.9 安装包可用 `aegiscode --migrate-threads` 或 `AegisCode.exe --migrate-threads` 传入相同参数。PostgreSQL 先完成 `pg_dump`，再提供备份文件。通知表另用 `python -m app.harness.notification_migration` 预览／备份迁移，见[通知使用指南](docs/站内通知使用指南.md)。迁移保留旧任务与会话标识，重复执行不新增关联；详细 Docker 命令与恢复说明见[项目会话使用指南](docs/项目会话使用指南.md)。
 
 ## 模型配置
 
@@ -294,6 +297,7 @@ Skill 快速体验：[下载示例 SKILL.md](docs/examples/skills/review-python/
 
 - **受控任务闭环**：工具调用与持久任务结合，支持规划失败回退、默认 10 步预算、反思反馈和全链路 Trace ID。
 - **个人长期记忆与技能积累**：成功与失败轨迹提炼为偏好、约束、经验和 Skill 草稿；来源追溯、去重、版本修订和退役形成跨会话复用闭环。候选经审阅后生效，权限规则不参与自进化。
+- **有界技能召回**：主分支先读取最多500项轻量目录元信息，再按版本读取最多32项正文、精排最多8项；两阶段重新核对所有者与工具权限，资源正文按需读取。不是全库向量检索，暂不报告速度或Token收益。
 - **分层上下文管理**：大工具结果外置保存，保留预览与读取引用；按完整工具调用消息组裁剪近期窗口，并记录历史计数与边界提示。缓存与 Token 收益以实测为准。
 - **中心化多 Agent**：主控保留规划和审批权；子运行只读、有限预算、父权限子集，父停止后回收活跃子，长结果可按引用读取全文。
 - **权限与安全边界**：租户与用户隔离、角色控制、工具参数校验、模型风险信号和精确参数人工审批；代码只在配置的 Docker 沙箱执行。
@@ -324,7 +328,7 @@ Skill 快速体验：[下载示例 SKILL.md](docs/examples/skills/review-python/
 - **没有模型或任务失败**：填写模型配置并重启，确认该模型支持工具调用和你的账号权限。
 - **无法执行代码**：配置并验证 Docker 沙箱；未配置时拒绝执行，不降级为宿主运行。
 - **看不到仓库工具或 MCP**：它们由运维配置与用户授权决定，不能通过普通对话添加任意宿主路径或服务地址。
-- **下载或启动安装器**：使用上方 0.2.8 Release 链接并核对 SHA256；便携版不能只复制一个 EXE。默认 8000 已占用时，从安装目录执行 `./AegisCode.exe --port 8002`，选择一个空闲端口。
+- **下载或启动安装器**：使用上方 0.2.9 Release 链接并核对 SHA256；便携版不能只复制一个 EXE。默认 8000 已占用时，从安装目录执行 `./AegisCode.exe --port 8002`，选择一个空闲端口。
 
 API 文档位于 `/docs`，数据库就绪探针为 `/api/v1/health/ready`。业务 API 需要登录令牌，创建任务需要 `Idempotency-Key`。
 
