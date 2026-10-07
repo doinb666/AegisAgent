@@ -13,6 +13,7 @@ from app.infrastructure.llm.stream_assembly import MAX_TEXT_CHARS
 
 from .context import PLAN_PROMPT, bounded_messages, collaboration_instructions
 from .errors import DocumentContextBudgetError, HarnessError, Principal
+from .file_write_approval import bound_contract, prepare_contract
 from .model_output import ModelOutput
 from .models import Asset, Run, ToolCall, User
 from .security import canonical, digest
@@ -634,6 +635,8 @@ class Worker:
         name = function.get("name")
         if not isinstance(call_id, str) or not call_id or name not in allowed:
             raise HarnessError(403, "工具不在可用目录或允许清单中")
+        if name == "file_write" and (run.parent_run_id or run.config.get("schedule_id")):
+            raise HarnessError(403, "子任务和定时任务禁止文件写入")
         arguments = json.loads(function.get("arguments", "{}"))
         if not isinstance(arguments, dict):
             raise HarnessError(422, "工具参数必须是JSON对象")
@@ -668,6 +671,11 @@ class Worker:
                 step = await self.review_risk(
                     current_run, name, arguments, arg_hash, messages, step
                 )
+        frozen_write = None
+        if name == "file_write":
+            frozen_write = await prepare_contract(
+                self, principal, run.id, call_id, arg_hash, arguments
+            )
         async with self.active_transaction(run.id) as (session, current):
             # 先以条件写入锁住运行行，取消与租约变更不能穿过执行前检查。
             locked = await session.execute(
@@ -703,6 +711,10 @@ class Worker:
             else:
                 already_done = False
                 approval = current.approval or {}
+                if name == "file_write" and (
+                    current.parent_run_id or current.config.get("schedule_id")
+                ):
+                    raise HarnessError(403, "子任务和定时任务禁止文件写入")
                 if requires_approval and not (
                     approval.get("hash") == arg_hash
                     and approval.get("call_id") == call_id
@@ -714,6 +726,8 @@ class Worker:
                         "hash": arg_hash,
                         "call_id": call_id,
                     }
+                    if name == "file_write":
+                        current.approval = {**current.approval, "file_write": frozen_write}
                     current.status, current.lease_owner, current.lease_until = (
                         "waiting_approval",
                         None,
@@ -721,6 +735,8 @@ class Worker:
                     )
                     self.store.emit(session, current, "waiting_approval", current.approval)
                     return None
+                if name == "file_write":
+                    frozen_write = bound_contract(approval, call_id, arg_hash)
                 if tool is None:
                     tool = ToolCall(
                         id=uid(),
@@ -740,9 +756,14 @@ class Worker:
                 )
         if not already_done:
             try:
-                result = await self.service.tool_executor.execute(
-                    name, arguments, principal, run.id
-                )
+                if name == "file_write":
+                    result = await self.service.tool_executor.execute(
+                        name, arguments, principal, run.id, approval_context=frozen_write
+                    )
+                else:
+                    result = await self.service.tool_executor.execute(
+                        name, arguments, principal, run.id
+                    )
             except asyncio.CancelledError:
                 raise
             except Exception as exc:

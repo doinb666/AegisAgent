@@ -126,6 +126,7 @@ async def test_approval_upload_memory_and_restore(tmp_path):
             await client.post(f"/api/v1/runs/{run_id}/approval", headers=headers, json=body)
         ).status_code == 409
         body["args_hash"] = pending["approval"]["hash"]
+        body["baseline_hash"] = pending["approval"]["file_write"]["baseline_hash"]
         assert (
             await client.post(f"/api/v1/runs/{run_id}/approval", headers=headers, json=body)
         ).status_code == 200

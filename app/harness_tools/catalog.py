@@ -7,6 +7,7 @@ from jsonschema import ValidationError, validate
 
 from app.core.tools.builtin.calculator import CalculatorTool
 from app.harness_tools import delegation
+from app.harness_tools.file_write import FileWriter
 from app.harness_tools.mcp import MCPGateway
 from app.harness_tools.project import ProjectManager
 from app.harness_tools.sandbox import SandboxClient, bounded
@@ -164,7 +165,30 @@ class HarnessTools:
     def requires_approval(self, name, arguments):
         return name in {"file_write", "python_execute", "mcp_call", "mcp_list", "project_prepare"}
 
-    async def execute(self, name, arguments, principal, run_id):
+    async def _authorize_file_write(self, principal, run_id):
+        if principal.role == "viewer":
+            raise PermissionError("viewer 无权写入文件")
+        if self.service is not None:
+            from app.harness.models import Run
+
+            async with self.service.store.sessions() as session:
+                run = await self.service.store.owned(session, Run, run_id, principal)
+                if run.parent_run_id or run.config.get("schedule_id"):
+                    raise PermissionError("子任务和定时任务仅允许只读工具")
+                if run.status != "running":
+                    raise PermissionError("任务状态不允许执行文件写入")
+
+    async def prepare_file_write(self, principal, run_id, arguments, call_id, args_hash):
+        await self._authorize_file_write(principal, run_id)
+        schema = next(
+            item for item in self.catalog(principal) if item["function"]["name"] == "file_write"
+        )
+        validate(arguments, schema["function"]["parameters"])
+        return await FileWriter(self.workspace).freeze(
+            principal, run_id, arguments, call_id, args_hash
+        )
+
+    async def execute(self, name, arguments, principal, run_id, *, approval_context=None):
         schema = next((s for s in self.catalog(principal) if s["function"]["name"] == name), None)
         if schema is None:
             raise PermissionError("没有使用此工具的权限")
@@ -205,7 +229,10 @@ class HarnessTools:
             )
             return await self.workspace.read(principal, source, arguments["path"])
         if name == "file_write":
-            return await self.workspace.write(principal, run_id, **arguments)
+            await self._authorize_file_write(principal, run_id)
+            return await FileWriter(self.workspace).execute(
+                principal, run_id, arguments, approval_context
+            )
         if name == "python_execute":
             self.workspace.directory(principal, run_id)
             return await self.sandbox.execute(principal, run_id, arguments["code"])

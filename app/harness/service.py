@@ -736,7 +736,13 @@ class HarnessService(AssetService):
             return [{"id": event.id, "type": event.type, "data": event.data} for event in events]
 
     async def approve(
-        self, principal, run_id, approved, expected_call_id=None, expected_args_hash=None
+        self,
+        principal,
+        run_id,
+        approved,
+        expected_call_id=None,
+        expected_args_hash=None,
+        expected_baseline_hash=None,
     ):
         async with self.store.write_lock, self.store.sessions.begin() as session:
             run = await self.store.owned(session, Run, run_id, principal)
@@ -751,6 +757,19 @@ class HarnessService(AssetService):
             ) != expected_args_hash:
                 raise HarnessError(409, "审批已过期或工具参数已改变")
             if approved:
+                baseline_conditions = []
+                if run.approval.get("name") == "file_write":
+                    from .file_write_approval import bound_contract
+
+                    frozen = bound_contract(run.approval, expected_call_id, expected_args_hash)
+                    if not expected_baseline_hash:
+                        raise HarnessError(422, "文件写入批准必须绑定冻结基线哈希")
+                    if frozen["baseline_hash"] != expected_baseline_hash:
+                        raise HarnessError(409, "文件写入审批基线已过期或不匹配")
+                    baseline_conditions.append(
+                        Run.approval["file_write"]["baseline_hash"].as_string()
+                        == expected_baseline_hash
+                    )
                 approval = {**run.approval, "approved": True}
                 result = await session.execute(
                     update(Run)
@@ -761,6 +780,7 @@ class HarnessService(AssetService):
                         Run.step == run.step,
                         Run.approval["call_id"].as_string() == expected_call_id,
                         Run.approval["hash"].as_string() == expected_args_hash,
+                        *baseline_conditions,
                     )
                     .values(approval=approval, status="queued")
                 )

@@ -65,6 +65,7 @@ class ApprovalInput(BaseModel):
     approved: bool
     call_id: str = Field(min_length=1, max_length=256)
     args_hash: str = Field(min_length=64, max_length=64)
+    baseline_hash: str | None = Field(default=None, min_length=64, max_length=64)
 
 
 class FeedbackInput(BaseModel):
@@ -285,6 +286,7 @@ async def approval(run_id: str, body: ApprovalInput, request: Request, principal
         body.approved,
         expected_call_id=body.call_id,
         expected_args_hash=body.args_hash,
+        expected_baseline_hash=body.baseline_hash,
     )
 
 
