@@ -519,6 +519,9 @@ def main():
     parser.add_argument("--static", required=True, type=Path)
     parser.add_argument("--port", required=True, type=int)
     parser.add_argument("--features", action="store_true", help="追加真实 SDK 流和文件差异审批验收")
+    parser.add_argument(
+        "--harness", action="store_true", help="追加 Plan、来源 Skill 与反馈修订专项"
+    )
     args = parser.parse_args()
     if bool(args.wheel) == bool(args.setup):
         parser.error("只能选择 wheel 或 Setup 一种产物")
@@ -598,6 +601,12 @@ def main():
         )
         if args.features:
             verify_features(command, root, environment, args.port, expected)
+        if args.harness:
+            try:
+                from .package_harness_acceptance import verify_harness
+            except ImportError:
+                from package_harness_acceptance import verify_harness
+            verify_harness(command, root, environment, args.port, expected)
 
 
 if __name__ == "__main__":
