@@ -3,9 +3,34 @@
 import argparse
 import hashlib
 import re
+import time
 from pathlib import Path
 
 import httpx
+
+
+def verify_download(client, url, expected_size, expected_digest, name, label="公开文件"):
+    """只重试传输中断；每次从零验证，不接受部分正文或完整性失败。"""
+    for attempt in range(3):
+        digest, size = hashlib.sha256(), 0
+        try:
+            with client.stream("GET", url) as response:
+                response.raise_for_status()
+                for block in response.iter_bytes():
+                    size += len(block)
+                    if size > expected_size:
+                        raise ValueError(f"{label}超出预期大小：{name}")
+                    digest.update(block)
+            if size != expected_size or digest.hexdigest() != expected_digest:
+                raise ValueError(f"{label}大小或摘要不一致：{name}")
+            return
+        except httpx.HTTPStatusError as error:
+            raise RuntimeError(f"公开下载返回HTTP {error.response.status_code}：{name}") from None
+        except httpx.TransportError:
+            if attempt == 2:
+                raise RuntimeError(f"公开下载连接失败，已尝试3次：{name}") from None
+            print(f"下载连接中断，准备第{attempt + 2}/3次尝试：{name}", flush=True)
+            time.sleep(attempt + 1)
 
 
 def main():
@@ -33,10 +58,14 @@ def main():
         raise ValueError("校验清单须包含四项发布资产")
     base = f"https://github.com/doinb666/AegisAgent/releases/download/{args.tag}/"
     with httpx.Client(follow_redirects=True, timeout=180) as client:
-        response = client.get(base + "SHA256SUMS.txt")
-        response.raise_for_status()
-        if response.content != manifest:
-            raise ValueError("公开清单与本地清单不一致")
+        verify_download(
+            client,
+            base + "SHA256SUMS.txt",
+            len(manifest),
+            hashlib.sha256(manifest).hexdigest(),
+            "SHA256SUMS.txt",
+            label="公开清单",
+        )
         print("公开校验清单一致", flush=True)
         for name in sorted(names):
             path = args.directory / name
@@ -44,17 +73,8 @@ def main():
             with path.open("rb") as source:
                 if hashlib.file_digest(source, "sha256").hexdigest() != checksums[name]:
                     raise ValueError(f"本地文件摘要不一致：{name}")
-            digest, size = hashlib.sha256(), 0
-            with client.stream("GET", base + name) as response:
-                response.raise_for_status()
-                for block in response.iter_bytes():
-                    size += len(block)
-                    if size > expected_size:
-                        raise ValueError(f"公开文件超出预期大小：{name}")
-                    digest.update(block)
-            if size != expected_size or digest.hexdigest() != checksums[name]:
-                raise ValueError(f"公开文件大小或摘要不一致：{name}")
-            print(f"独立下载通过：{name}（{size}字节）", flush=True)
+            verify_download(client, base + name, expected_size, checksums[name], name)
+            print(f"独立下载通过：{name}（{expected_size}字节）", flush=True)
 
 
 if __name__ == "__main__":
