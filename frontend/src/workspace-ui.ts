@@ -125,6 +125,9 @@ const WorkspaceUI = (() => {
     if (type === "approval") description += data.approved ? "，已批准" : "，已拒绝";
     if (type === "feedback") description += data.success ? "，目标已达成" : "，仍需改进";
     if (data.error) description += `：${String(data.error).slice(0,120)}`;
+    if (type === "tool_result" && data.name === "file_write" && data.result?.status === "rejected") {
+      description = `文件未写入：${String(data.result.error || "修改未通过版本核对，请检查证据").slice(0, 200)}`;
+    }
     const row = node("li"); row.append(node("span", `#${id} · ${caption}`), node("div", description));
     const details = node("details"), evidence = node("pre", JSON.stringify(data, null, 2));
     details.append(node("summary", "查看完整事件证据"), evidence); row.append(details);

@@ -11,6 +11,7 @@ import { initializeSchedules } from "./schedules";
 import { initializeTaskInputs } from "./task-inputs";
 import { initializeModelParameters } from "./model-parameters";
 import { initializeModelOutput } from "./model-output";
+import { initializeFileChanges } from "./file-changes";
 
 const $ = (id: string): any => document.getElementById(id);
 const apiRoot = "/api/v1";
@@ -35,6 +36,7 @@ const taskInputs = initializeTaskInputs({api, identity: () => state.token, messa
 });
 const modelParameters = initializeModelParameters(() => $("model").value);
 const modelOutput = initializeModelOutput($("conversation"));
+const fileChanges = initializeFileChanges();
 const projectThreads = initializeProjectThreads({
   api, identity: () => state.token, canWrite, select: selectThread, notice,
   changed: thread => {
@@ -85,7 +87,14 @@ async function guard(action, button=null) {
   const valid=contextCurrent();
   if (button) button.disabled = true;
   try { await action(); } catch(error) { if(valid()) notice(error.message); }
-  finally { if (button && token===state.token) button.disabled = button.id==="send" && (state.runLoading || projectThreads.isArchived()); }
+  finally {
+    if (button && token===state.token) {
+      if (button.id==="send") button.disabled=state.runLoading || projectThreads.isArchived();
+      else if (button.id==="approve") button.disabled=state.run?.status!=="waiting_approval"
+        || !fileChanges.canApprove(state.run?.approval || null);
+      else button.disabled=false;
+    }
+  }
 }
 async function guardForm(action: () => Promise<void>, button: HTMLButtonElement, errorId: string): Promise<void> {
   const token = state.token, valid = contextCurrent();
@@ -247,6 +256,7 @@ function renderRun(run) {
   $("cancel").hidden=!canWrite() || !['queued','running','waiting_approval'].includes(run.status);
   $("feedback").hidden=!canWrite() || !['completed','failed'].includes(run.status);
   $("approval").hidden=run.status!=="waiting_approval";
+  $("approve").disabled=!fileChanges.render(run.status==="waiting_approval" ? run.approval : null);
   if(run.status==="waiting_approval") WorkspaceUI.setInspector(true);
   if(run.approval) $("approval-data").textContent=JSON.stringify({工具:run.approval.name,参数:run.approval.arguments},null,2);
   $("approve").hidden=!canWrite();$("reject").hidden=!canWrite();
@@ -255,6 +265,7 @@ function renderRun(run) {
   $("conversation").scrollTop=$("conversation").scrollHeight;
 }
 async function openRun(id) {
+  fileChanges.clear();
   modelOutput.clear();
   taskInputs.showRun(null);
   taskInputs.resetSelection();
@@ -293,6 +304,7 @@ async function openRun(id) {
 function addEvent(id,type,data) {
   if(id<=state.cursor) return; state.cursor=id;
   if(['completed','failed','cancelled','interrupted'].includes(type)) {
+    fileChanges.clear();
     modelOutput.settle(type);
     if(state.run && ['queued','running','waiting_approval'].includes(state.run.status)) {
       state.run.status=type;
@@ -354,6 +366,7 @@ async function watch(id,generation,token) {
   }
 }
 function newTask() {
+  fileChanges.clear();
   modelOutput.clear();
   modelParameters.reset();
   taskInputs.resetSelection(); taskInputs.showRun(null);
@@ -415,7 +428,11 @@ for(const [id,path,body] of runActions) {
   $(id).onclick=()=>guard(async()=>{ const runId=state.run.id;
     if(!canWrite())return;
     const valid=contextCurrent();
-    const payload=path==="approval" ? {...body,call_id:state.run.approval.call_id,args_hash:state.run.approval.hash} : body;
+    const payload: Record<string, unknown>=path==="approval" ? {...body,call_id:state.run.approval.call_id,args_hash:state.run.approval.hash} : body;
+    if(path==="approval" && body.approved) {
+      const baselineHash=fileChanges.baselineHash(state.run.approval);
+      if(baselineHash)payload.baseline_hash=baselineHash;
+    }
     await api(`/runs/${runId}/${path}`,{method:"POST",body:JSON.stringify(payload)});if(!valid())return;
     const opened=await openRun(runId);
     if(opened)notice(path==="feedback"?"反馈已记录，经验可在 Skills 中管理。":"任务状态已更新"); },$(id));
@@ -424,7 +441,7 @@ async function showView(view) {
   if(view==="chat" && state.view==="chat")return;
   if(view==="chat" && state.view!=="chat" && state.run)return openRun(state.run.id);
   state.view=view;state.viewGeneration++;state.assetsGeneration++;
-  if(view!=="chat"){modelOutput.clear();state.generation++;state.stream?.abort();WorkspaceUI.clearFiles();setRunLoading(false);}
+  if(view!=="chat"){fileChanges.clear();modelOutput.clear();state.generation++;state.stream?.abort();WorkspaceUI.clearFiles();setRunLoading(false);}
   const titles: Record<string, string>={chat:"任务空间",projects:"项目",memories:"长期记忆",skills:"技能库",documents:"知识库",schedules:"定时任务",templates:"任务模板",settings:"能力与设置"};
   $("view-title").textContent=titles[view]; $("location").textContent=titles[view];
   $("chat-view").hidden=view!=="chat"; $("settings-view").hidden=view!=="settings";

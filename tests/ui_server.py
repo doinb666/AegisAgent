@@ -1,6 +1,7 @@
 """只监听本机的浏览器验收服务；使用明确的确定性测试模型。"""
 
 import asyncio
+import json
 import os
 from pathlib import Path
 from types import SimpleNamespace
@@ -58,6 +59,40 @@ class AcceptanceModel(ToolModel):
             "",
         )
         on_delta = kwargs.get("on_delta")
+        if (
+            kwargs.get("tools")
+            and task == "验收：差异长文写文件"
+            and not any(item.get("role") == "tool" for item in messages)
+        ):
+            return SimpleNamespace(
+                content="",
+                model_id="test",
+                usage={},
+                raw={
+                    "choices": [
+                        {
+                            "message": {
+                                "tool_calls": [
+                                    {
+                                        "id": "call-file-large",
+                                        "type": "function",
+                                        "function": {
+                                            "name": "file_write",
+                                            "arguments": json.dumps(
+                                                {
+                                                    "path": "review.txt",
+                                                    "content": '<img src=x onerror="alert(1)">\n'
+                                                    + "边界说明\n" * 2000,
+                                                }
+                                            ),
+                                        },
+                                    }
+                                ]
+                            }
+                        }
+                    ]
+                },
+            )
         if on_delta and task.startswith("验收：流式"):
             if task == "验收：流式工具" and any(item.get("role") == "tool" for item in messages):
                 return await super().chat(messages, **kwargs)

@@ -193,7 +193,16 @@
     </main>
     <aside id="inspector" class="inspector" aria-label="任务审查"><div class="inspector-heading"><span class="eyebrow">任务审查</span><h3>运行与证据</h3></div>
       <div id="run-status" class="run-status">尚未开始任务</div><div id="run-meta" class="run-meta"></div>
-      <div id="approval" class="approval" hidden><h4>需要你的批准</h4><p>请核对工具及完整参数。批准仅对本次操作有效。</p><pre id="approval-data"></pre><button id="approve" class="primary">批准这次操作</button><button id="reject" class="danger">拒绝</button></div>
+      <div id="approval" class="approval" hidden><h4>需要你的批准</h4><p>请核对工具及完整参数。批准仅对本次操作有效。</p>
+        <section id="file-change" class="file-change" aria-labelledby="file-change-title" hidden>
+          <h5 id="file-change-title"></h5><p id="file-change-summary" class="muted"></p>
+          <div id="file-change-diff" class="file-change-diff" tabindex="0" aria-label="文件修改差异"></div>
+          <p id="file-change-warning" class="file-change-warning" role="status"></p>
+          <details><summary>对照前后内容</summary><h5>原内容</h5><pre id="file-change-before"></pre><h5>拟写内容</h5><pre id="file-change-after"></pre></details>
+        </section>
+        <details id="approval-arguments"><summary>查看完整工具参数</summary><pre id="approval-data"></pre></details>
+        <button id="approve" class="primary">批准这次操作</button><button id="reject" class="danger">拒绝</button>
+      </div>
       <button id="cancel" class="secondary" hidden>停止任务</button>
       <section id="collaboration-review" class="collaboration-review" aria-labelledby="collaboration-heading" hidden><div class="section-caption"><h4 id="collaboration-heading">协作与独立验收</h4></div><p class="muted">验收核对工具账本与执行契约，主控仍需审查结论。</p><ol id="collaboration-nodes" class="collaboration-nodes"></ol></section>
       <div id="feedback" class="feedback" hidden><h4>任务是否达到目标？</h4><button id="success">已解决</button><button id="failure">仍有问题</button><p class="muted">反馈用于验证经验，候选能力可在 Skills 中管理。</p></div>

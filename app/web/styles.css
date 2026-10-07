@@ -211,6 +211,12 @@ kbd { font-size: 10px; font-family: inherit; color: var(--muted); border: 1px so
 .approval p { font-size: 12px; }
 .approval button { width: 100%; margin-top: 8px; }
 .approval pre { max-height: 320px; overflow: auto; font-size: 12px; }
+.file-change h5 { font-size: 13px; font-weight: 600; margin: 12px 0; overflow-wrap: anywhere; }
+.file-change-diff { background: var(--paper); border: 1px solid var(--line); border-radius: 8px; max-height: 320px; overflow: auto; padding: 10px; font: 12px/1.8 Consolas, "Microsoft YaHei", monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
+.file-change-diff div { min-height: 1.8em; }
+.diff-added { background: var(--soft); color: var(--accent); }
+.diff-removed { background: var(--soft-alt); color: var(--error); }
+.file-change-warning { color: var(--muted); font-size: 12px; margin: 12px 0; }
 .feedback { margin: 24px 0; border-top: 1px solid var(--line); padding-top: 20px; }
 .feedback button { font-size: 12px; }
 .feedback p { margin-top: 10px; }

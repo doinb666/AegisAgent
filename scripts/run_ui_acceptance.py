@@ -27,6 +27,7 @@ def main():
         "scripts.task_inputs_browser_acceptance",
         "scripts.model_parameters_browser_acceptance",
         "scripts.model_output_browser_acceptance",
+        "scripts.file_changes_browser_acceptance",
     }
     if not set(args.module) <= allowed:
         parser.error("请选择已登记的验收模块")

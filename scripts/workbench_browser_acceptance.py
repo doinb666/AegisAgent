@@ -20,10 +20,15 @@ def main():
     errors = []
     server_errors = []
     injected_server_errors = []
+    failed_requests = []
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch(channel="msedge", headless=True)
         page = browser.new_page(viewport={"width": 1440, "height": 1000})
         page.on("pageerror", lambda error: errors.append(str(error)))
+        page.on(
+            "requestfailed",
+            lambda request: failed_requests.append({"url": request.url, "reason": request.failure}),
+        )
 
         def record_server_error(response):
             if response.status < 500:
@@ -39,6 +44,21 @@ def main():
         expect(page.locator("#theme-toggle")).to_be_visible()
         assert page.locator("html").get_attribute("data-theme") == "light"
         page.locator("#theme-toggle").click()
+        if page.locator("html").get_attribute("data-theme") != "dark":
+            print(
+                json.dumps(
+                    {
+                        "主题切换诊断": page.evaluate("""() => ({
+                  theme: document.documentElement.dataset.theme,
+                  handler: typeof document.getElementById('theme-toggle').onclick,
+                  resources: performance.getEntriesByType('resource').map(r => r.name)
+                })"""),
+                        "页面错误": errors,
+                        "请求失败": failed_requests,
+                    },
+                    ensure_ascii=False,
+                )
+            )
         assert page.locator("html").get_attribute("data-theme") == "dark"
         page.reload()
         page.wait_for_load_state("networkidle")
