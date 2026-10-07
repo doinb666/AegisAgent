@@ -20,6 +20,7 @@ from .inspection import InspectionService
 from .model_gateway import SharedModelGateway
 from .models import Asset, Feedback, Run, ThreadRun, Token, ToolCall, User
 from .notifications import NotificationService
+from .plan_runtime import require_no_risk_deny, reserve_cost, shared
 from .schedules import ScheduleService
 from .security import canonical, digest, password_hash, password_matches
 from .store import Store, run_dict, scope, uid
@@ -295,7 +296,12 @@ class HarnessService(AssetService):
                         parent_config = dict(parent.config)
                         delegated = parent_config.get("delegated_steps", 0)
                         # 委派预留与父调用共享步数，最后一轮必须留给主控汇总。
-                        remaining = parent_config["max_steps"] - parent.step - delegated - 1
+                        reserved = (
+                            reserve_cost(parent_config, after_tools=True)
+                            if shared(parent_config)
+                            else 1
+                        )
+                        remaining = parent_config["max_steps"] - parent.step - delegated - reserved
                         child_budget = max_steps or min(2, remaining)
                         if child_budget < 1 or child_budget > remaining:
                             raise HarnessError(409, "父运行剩余预算不足")
@@ -687,7 +693,7 @@ class HarnessService(AssetService):
                 parent.config["max_steps"]
                 - parent.step
                 - parent.config.get("delegated_steps", 0)
-                - 1
+                - (reserve_cost(parent.config, after_tools=True) if shared(parent.config) else 1)
             )
             if remaining < task_count:
                 raise HarnessError(409, "父运行预算不足，无法创建整批子运行并保留主控汇总")
@@ -757,6 +763,7 @@ class HarnessService(AssetService):
             ) != expected_args_hash:
                 raise HarnessError(409, "审批已过期或工具参数已改变")
             if approved:
+                require_no_risk_deny(run.config, expected_args_hash)
                 baseline_conditions = []
                 if run.approval.get("name") == "file_write":
                     from .file_write_approval import bound_contract

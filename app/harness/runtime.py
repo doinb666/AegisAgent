@@ -5,17 +5,34 @@ import json
 import logging
 import time
 from contextlib import asynccontextmanager
+from copy import deepcopy
 
 from sqlalchemy import select, update
 
 from app.infrastructure.llm.model_usage import safe_model_usage
 from app.infrastructure.llm.stream_assembly import MAX_TEXT_CHARS
 
-from .context import PLAN_PROMPT, bounded_messages, collaboration_instructions
+from .context import bounded_messages, collaboration_instructions
 from .errors import DocumentContextBudgetError, HarnessError, Principal
 from .file_write_approval import bound_contract, prepare_contract
 from .model_output import ModelOutput
 from .models import Asset, Run, ToolCall, User
+from .plan_runtime import (
+    POLICY,
+    PlanRuntime,
+    bind_tool,
+    bounded_fallback_answer,
+    bounded_tool_calls,
+    charge,
+    current_node,
+    current_tool_access,
+    require_no_risk_deny,
+    reserve_cost,
+    reusable_tool,
+    shared,
+    validate_tool_schema,
+    verify_file_reuse,
+)
 from .security import canonical, digest
 from .store import TERMINAL_STATUSES, scope, uid
 from .task_inputs import (
@@ -136,6 +153,8 @@ class Worker:
         }
         async with self.active_transaction(run_id) as (session, run):
             values = {"messages": messages, "step": step}
+            if shared(run.config):
+                values["step"] = run.step
             if config is not None:
                 if run.config.get("document_context_prepared"):
                     config = {
@@ -166,6 +185,36 @@ class Worker:
                         "step": step,
                         "kind": "tools" if messages[-1].get("tool_calls") else "answer",
                     }
+                    if marker and marker.get("purpose"):
+                        pending = final_config["model_result_pending"]
+                        pending.update(
+                            {
+                                key: marker.get(key)
+                                for key in ("purpose", "node_id", "plan_revision")
+                            }
+                        )
+                        pending.update(step=run.step, message_index=len(messages) - 1)
+                        if marker["purpose"] == "node":
+                            plan = deepcopy(final_config["plan"])
+                            node = next(
+                                item for item in plan["nodes"] if item["id"] == marker["node_id"]
+                            )
+                            if plan["revision"] != marker["plan_revision"]:
+                                raise HarnessError(409, "模型检查点计划修订号不一致")
+                            node["proposed_calls"] = messages[-1].get("tool_calls", [])
+                            node["model_result_identity"] = dict(pending)
+                            node["status"] = (
+                                "running" if pending["kind"] == "tools" else "accepting"
+                            )
+                            if pending["kind"] == "answer":
+                                node["output"] = messages[-1].get("content") or ""
+                                self.store.emit(
+                                    session,
+                                    run,
+                                    "node_accepting",
+                                    {"node_id": node["id"], "plan_revision": plan["revision"]},
+                                )
+                            final_config["plan"] = plan
                 values["config"] = final_config
             updated = await session.execute(
                 update(Run)
@@ -286,7 +335,17 @@ class Worker:
                 session.add(asset)
                 self.service.snapshot(session, asset)
 
-    async def model_call(self, run, messages, tools=None, *, public_output=False, step=None):
+    async def model_call(
+        self,
+        run,
+        messages,
+        tools=None,
+        *,
+        public_output=False,
+        step=None,
+        purpose=None,
+        node_id=None,
+    ):
         if self.service.model_router is None:
             raise HarnessError(503, "模型未配置；请配置有效模型凭证")
         await self.prepare_document_context(run, messages)
@@ -303,7 +362,24 @@ class Worker:
             if current.config.get("model_inflight"):
                 raise HarnessError(409, "未完成模型调用不能再次生成")
             call_config = dict(current.config)
-            call_config.pop("model_result_pending", None)
+            if shared(call_config):
+                purpose = purpose or "react"
+                reserve = (
+                    reserve_cost(call_config, after_tools=purpose == "risk")
+                    if purpose in {"node", "risk", "react"}
+                    else 0
+                )
+                if purpose == "replan":
+                    plan = deepcopy(call_config["plan"])
+                    if plan["replans_used"] >= 1:
+                        raise HarnessError(409, "一次重规划预算已经使用")
+                    plan["replans_used"] = 1
+                    call_config["plan"] = plan
+                    reserve = 3
+                charge(current, reserve=reserve)
+                step = current.step
+            if purpose != "risk":
+                call_config.pop("model_result_pending", None)
             current.config = {
                 **call_config,
                 "model_inflight": {
@@ -313,6 +389,19 @@ class Worker:
                     "public": public_stream,
                 },
             }
+            if shared(call_config):
+                if purpose in {"node", "replan", "final"}:
+                    current.messages = list(messages)
+                current.config = {
+                    **current.config,
+                    "model_inflight": {
+                        **current.config["model_inflight"],
+                        "purpose": purpose,
+                        "node_id": node_id,
+                        "plan_revision": (call_config.get("plan") or {}).get("revision"),
+                        "message_index": len(current.messages),
+                    },
+                }
             if public_stream:
                 self.store.emit(
                     session,
@@ -444,6 +533,26 @@ class Worker:
             ]
         allowed = {tool["function"]["name"] for tool in catalog}
         messages, step, config = list(run.messages), run.step, dict(run.config)
+        if config["mode"] == "plan" and not config.get("planned") and not shared(config):
+            config["budget_policy"] = POLICY
+            await self.checkpoint(run.id, messages, step, "plan_initialized", {}, config)
+            run = await self.load(run.id)
+        elif (
+            config["mode"] == "plan"
+            and config.get("planned")
+            and not config.get("plan")
+            and not shared(config)
+        ):
+            if not config.get("legacy_plan_notified"):
+                config["legacy_plan_notified"] = True
+                await self.checkpoint(
+                    run.id,
+                    messages,
+                    step,
+                    "plan_legacy_compatibility",
+                    {"reason": "旧运行缺少结构计划，保持原有执行语义"},
+                    config,
+                )
         if config.get("collaboration_mode") and not config.get("collaboration_initialized"):
             messages[0] = {
                 **messages[0],
@@ -489,6 +598,25 @@ class Worker:
         while True:
             current_run = await self.load(run.id)
             config = {**config, **current_run.config}
+            if shared(config):
+                step = current_run.step
+                messages = list(current_run.messages)
+                run = current_run
+                planning_result = (config.get("model_result_pending") or {}).get(
+                    "purpose"
+                ) == "plan_initial"
+                # 已有计划先按用途消费检查点，重规划违规调用不进入工具队列。
+                if planning_result or config.get("plan") or not self.pending_calls(messages):
+                    planner = PlanRuntime(self, run.id, principal, catalog, allowed)
+                    if not config.get("plan_fallback"):
+                        if await planner.execute():
+                            return
+                        current_run = await self.load(run.id)
+                        config, step, messages = (
+                            dict(current_run.config),
+                            current_run.step,
+                            list(current_run.messages),
+                        )
             known_result = current_run.config.get("model_result_pending")
             if known_result and known_result.get("kind") == "answer":
                 if (
@@ -502,6 +630,11 @@ class Worker:
                 return
             pending = self.pending_calls(messages)
             if pending:
+                if shared(config):
+                    if not await PlanRuntime(self, run.id, principal, catalog, allowed).preflight(
+                        current_run, pending
+                    ):
+                        return
                 for call in pending:
                     next_step = await self.execute_tool(
                         run, principal, call, messages, step, allowed
@@ -513,43 +646,15 @@ class Worker:
             if step >= config["max_steps"] - config.get("delegated_steps", 0):
                 await self.finish(run.id, "failed", error="运行步数预算耗尽")
                 return
-            if config["mode"] == "plan" and not config.get("planned"):
-                # 审批工具先完成，再规划；恢复和循环都沿用同一检查点。
+            if not shared(config):
                 step += 1
-                config["planned"] = True
-                try:
-                    response = await self.model_call(
-                        run,
-                        messages
-                        + [
-                            {
-                                "role": "user",
-                                "content": PLAN_PROMPT,
-                            }
-                        ],
-                    )
-                    plan = json.loads(response.content)
-                    if not isinstance(plan, dict) or not isinstance(plan.get("steps"), list):
-                        raise ValueError("计划格式无效")
-                    messages.append({"role": "assistant", "content": "计划：" + canonical(plan)})
-                    await self.checkpoint(run.id, messages, step, "plan", plan, config)
-                except DocumentContextBudgetError:
-                    raise
-                except Exception as exc:
-                    await self.checkpoint(
-                        run.id, messages, step, "plan_fallback", {"reason": str(exc)[:500]}, config
-                    )
-                continue
-            step += 1
             response = await self.model_call(
                 run, messages, catalog, public_output=config["mode"] == "react", step=step
             )
             raw_message = ((response.raw or {}).get("choices") or [{}])[0].get("message", {})
-            calls = raw_message.get("tool_calls") or []
+            calls = bounded_tool_calls(raw_message.get("tool_calls"))
             message = {"role": "assistant", "content": response.content or ""}
             if calls:
-                if len(calls) > 16:
-                    raise HarnessError(422, "单轮工具调用数量超出限制")
                 message["tool_calls"] = calls
             messages.append(message)
             await self.checkpoint(
@@ -574,6 +679,17 @@ class Worker:
         current = await self.load(run.id)
         config = {**config, **current.config}
         answer = messages[-1].get("content") or ""
+        if shared(config):
+            bounded_fallback_answer(current)
+            async with self.active_transaction(run.id) as (session, current):
+                answer = bounded_fallback_answer(current)
+                charge(current)
+                current.status, current.answer = "completed", answer
+                current.lease_owner, current.lease_until = None, None
+                self.store.emit(session, current, "completed", {"answer": answer, "error": None})
+                await self.store.stop_children(session, current)
+                await self.consolidate(run.id, session)
+            return
         if (
             config["mode"] == "reflection"
             and self.service.settings.reflection_enabled
@@ -607,7 +723,7 @@ class Worker:
         for index in range(len(messages) - 1, -1, -1):
             message = messages[index]
             if message.get("role") == "assistant":
-                calls = message.get("tool_calls", [])
+                calls = bounded_tool_calls(message.get("tool_calls"))
                 done_ids = {
                     item.get("tool_call_id")
                     for item in messages[index + 1 :]
@@ -617,6 +733,8 @@ class Worker:
         return []
 
     async def execute_tool(self, run, principal, call, messages, step, allowed):
+        if shared(run.config):
+            principal, allowed = await current_tool_access(self, run, principal, allowed)
         if run.config.get("schedule_id"):
             from .schedules import SCHEDULE_TOOLS
 
@@ -650,6 +768,61 @@ class Worker:
         )
         if requires_approval and principal.role == "viewer":
             raise HarnessError(403, "viewer不能执行高风险工具")
+        if shared(run.config):
+            validate_tool_schema(self, principal, name, arguments)
+        reused = None
+        async with self.active_transaction(run.id) as (session, current):
+            require_no_risk_deny(current.config, arg_hash)
+            if shared(current.config):
+                reused = await reusable_tool(session, current, name, arguments, requires_approval)
+        if reused is not None:
+            if name == "file_write":
+                # 只核查当前写入权限，不冻结或替换来源批准的基线。
+                await verify_file_reuse(self, principal, run.id, arguments)
+            async with self.active_transaction(run.id) as (session, current):
+                require_no_risk_deny(current.config, arg_hash)
+                principal, current_allowed = await current_tool_access(
+                    self, current, principal, allowed, session
+                )
+                if name not in current_allowed or (
+                    requires_approval and principal.role == "viewer"
+                ):
+                    raise HarnessError(403, "历史工具结果复用权限已撤销")
+                validate_tool_schema(self, principal, name, arguments)
+                source = await reusable_tool(session, current, name, arguments, requires_approval)
+                if source is None or source.id != reused.id:
+                    raise HarnessError(409, "已知工具来源发生变化，禁止重复执行")
+                bind_tool(current, source.id)
+                result = source.result
+                self.store.emit(
+                    session,
+                    current,
+                    "tool_reused",
+                    {
+                        "call_id": call_id,
+                        "source_id": source.id,
+                        "source_call_id": source.call_id,
+                        "name": name,
+                        "reported_known_result": True,
+                        "business_success_verified": False,
+                    },
+                )
+                messages.append(
+                    {
+                        "role": "tool",
+                        "tool_call_id": call_id,
+                        "content": canonical(
+                            {
+                                "source_id": source.id,
+                                "reported_known_result": True,
+                                "result": self.preview(result),
+                                "说明": "这是归档后缀的已知历史调用结果，不是重新执行或新观察。",
+                            }
+                        ),
+                    }
+                )
+                current.messages = list(messages)
+                return current.step
         if requires_approval and self.service.settings.risk_review_enabled:
             current_run = await self.load(run.id)
             async with self.store.sessions() as session:
@@ -662,6 +835,7 @@ class Worker:
                 )
             approval = current_run.approval or {}
             reviewed = current_run.config.get("risk_reviews", {}).get(arg_hash)
+            require_no_risk_deny(current_run.config, arg_hash)
             already_bound = approval.get("hash") == arg_hash and approval.get("call_id") == call_id
             if (
                 not reviewed
@@ -677,6 +851,16 @@ class Worker:
                 self, principal, run.id, call_id, arg_hash, arguments
             )
         async with self.active_transaction(run.id) as (session, current):
+            require_no_risk_deny(current.config, arg_hash)
+            if shared(current.config):
+                principal, current_allowed = await current_tool_access(
+                    self, current, principal, allowed, session
+                )
+                if name not in current_allowed or (
+                    requires_approval and principal.role == "viewer"
+                ):
+                    raise HarnessError(403, "计划工具执行权限已撤销")
+                validate_tool_schema(self, principal, name, arguments)
             # 先以条件写入锁住运行行，取消与租约变更不能穿过执行前检查。
             locked = await session.execute(
                 update(Run)
@@ -708,6 +892,8 @@ class Worker:
             if tool and tool.status == "done":
                 result = tool.result
                 already_done = True
+                if shared(current.config):
+                    bind_tool(current, tool.id)
             else:
                 already_done = False
                 approval = current.approval or {}
@@ -750,6 +936,10 @@ class Worker:
                     )
                     session.add(tool)
                 tool.status = "started"
+                if shared(current.config):
+                    charge(current, reserve=reserve_cost(current.config, after_tools=True))
+                    bind_tool(current, tool.id)
+                    step = current.step
                 current.approval = None
                 self.store.emit(
                     session, current, "tool_started", {"call_id": call_id, "name": name}
@@ -845,7 +1035,13 @@ class Worker:
             {"role": "user", "content": canonical({"tool": name, "arguments": arguments})},
         ]
         try:
-            response = await self.model_call(run, isolated_messages)
+            node = current_node(run.config)
+            response = await self.model_call(
+                run,
+                isolated_messages,
+                purpose="risk" if shared(config) else None,
+                node_id=node["id"] if node else None,
+            )
             candidate = json.loads(response.content)
             if not isinstance(candidate, dict) or candidate.get("risk") not in {
                 "allow",
@@ -855,13 +1051,14 @@ class Worker:
                 raise ValueError("风险审查格式无效")
             review = {"risk": candidate["risk"], "reason": str(candidate.get("reason", ""))[:1000]}
         except Exception as exc:
+            if shared(config):
+                raise
             review["fallback"] = type(exc).__name__
         config["risk_reviews"] = {**config.get("risk_reviews", {}), arg_hash: review}
         await self.checkpoint(
             run.id, messages, step, "risk_review", {"hash": arg_hash, **review}, config
         )
-        if review["risk"] == "deny":
-            raise HarnessError(403, "独立风险审查拒绝该工具请求：" + review["reason"])
+        require_no_risk_deny(config, arg_hash)
         return step
 
     def preview(self, result):

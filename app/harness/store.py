@@ -3,6 +3,7 @@
 import asyncio
 import time
 from contextlib import asynccontextmanager
+from copy import deepcopy
 from uuid import uuid4
 
 from sqlalchemy import event, inspect, select, text, update
@@ -143,6 +144,17 @@ class Store:
     def emit(self, session, run, event_type, data):
         marker = run.config.get("model_inflight")
         terminal = event_type in TERMINAL_STATUSES or run.status in TERMINAL_STATUSES
+        if terminal and run.config.get("plan"):
+            plan = deepcopy(run.config["plan"])
+            plan["status"] = "completed" if event_type == "completed" else "blocked"
+            if event_type != "completed":
+                for node in plan["nodes"]:
+                    if node["status"] != "completed":
+                        node["status"] = "blocked"
+                        node["blocked_reason"] = (
+                            node.get("blocked_reason") or run.error or "运行已终止"
+                        )
+            run.config = {**run.config, "plan": plan}
         if terminal and "model_result_pending" in run.config:
             run.config = {
                 key: value for key, value in run.config.items() if key != "model_result_pending"
@@ -268,7 +280,12 @@ class Store:
             return None
         locked = await session.execute(
             update(Run)
-            .where(Run.id == run_id, Run.status == "running", Run.lease_owner == worker_id)
+            .where(
+                Run.id == run_id,
+                Run.status == "running",
+                Run.lease_owner == worker_id,
+                Run.lease_until > time.time(),
+            )
             .values(status=Run.status)
         )
         if not locked.rowcount:
