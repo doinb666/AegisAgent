@@ -23,6 +23,19 @@ from .task_inputs import (
 logger = logging.getLogger(__name__)
 
 
+def safe_model_usage(usage):
+    """模型用量仅持久化四个标准字段及有界非负整数，避免供应商数据旁路。"""
+    if not isinstance(usage, dict):
+        return None
+    return {
+        key: value
+        for key, value in usage.items()
+        if key in {"prompt_tokens", "completion_tokens", "total_tokens", "cached_tokens"}
+        and type(value) is int
+        and 0 <= value <= 10**12
+    }
+
+
 class Worker:
     def __init__(self, service, child_only=False):
         self.service = service
@@ -247,7 +260,9 @@ class Worker:
             raise HarnessError(503, "模型未配置；请配置有效模型凭证")
         await self.prepare_document_context(run, messages)
         kwargs = {"tools": tools, "tool_choice": "auto"} if tools else {}
-        return await asyncio.wait_for(
+        if run.config.get("model_parameters"):
+            kwargs["model_parameters"] = run.config["model_parameters"]
+        response = await asyncio.wait_for(
             self.service.model_router.chat(
                 bounded_messages(messages, self.service.settings.context_chars),
                 model_preference=run.model,
@@ -255,6 +270,19 @@ class Worker:
             ),
             timeout=self.service.settings.model_timeout_seconds,
         )
+        # 统一记录所有成功调用，覆盖规划、反思与独立风险审查；不持久化请求正文。
+        async with self.active_transaction(run.id) as (session, current):
+            self.store.emit(
+                session,
+                current,
+                "model_usage",
+                {
+                    "model": str(getattr(response, "model_id", ""))[:128],
+                    "usage": safe_model_usage(getattr(response, "usage", None)),
+                    "model_parameters": run.config.get("model_parameters", {}),
+                },
+            )
+        return response
 
     async def prepare_document_context(self, run, messages):
         """首次任务调用按动态消息复核；独立风险审查没有快照，继续保持隔离。"""
@@ -444,7 +472,12 @@ class Worker:
                 messages,
                 step,
                 "model",
-                {"model": response.model_id, "usage": response.usage, "tool_calls": calls},
+                {
+                    "model": response.model_id,
+                    "usage": safe_model_usage(getattr(response, "usage", None)),
+                    "tool_calls": calls,
+                    "model_parameters": run.config.get("model_parameters", {}),
+                },
             )
             if calls:
                 continue

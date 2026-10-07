@@ -8,6 +8,10 @@ from sqlalchemy import delete, func, select, update
 from sqlalchemy.exc import IntegrityError
 
 from app.harness_tools.workspace import Workspace
+from app.infrastructure.llm.model_parameters import (
+    normalize_model_parameters,
+    validate_model_selection,
+)
 
 from .assets import AssetService
 from .context import SYSTEM_PREFIX
@@ -179,6 +183,7 @@ class HarnessService(AssetService):
         project_mode=None,
         thread_id=None,
         document_ids=None,
+        model_parameters=None,
         _schedule_gate=None,
     ):
         if not message.strip() or not idempotency_key or len(idempotency_key) > 256:
@@ -205,6 +210,10 @@ class HarnessService(AssetService):
         if thread_id is not None and parent_run_id:
             raise HarnessError(403, "子任务不能指定主会话")
         document_ids = validate_document_ids(document_ids)
+        try:
+            model_parameters = normalize_model_parameters(model_parameters)
+        except ValueError as exc:
+            raise HarnessError(422, str(exc)) from None
         if document_ids and (parent_run_id or _schedule_gate is not None):
             raise HarnessError(403, "子任务和定时任务不能携带显式资料")
         payload = dict(
@@ -225,6 +234,8 @@ class HarnessService(AssetService):
             payload["thread_id"] = thread_id
         if document_ids:
             payload["document_ids"] = document_ids
+        if model_parameters:
+            payload["model_parameters"] = model_parameters
         payload_hash = digest(canonical(payload))
         async with self.store.write_lock:
             try:
@@ -246,6 +257,10 @@ class HarnessService(AssetService):
                             )
                             return run_dict(existing)
                         return self._idempotent(existing, payload_hash)
+                    try:
+                        validate_model_selection(self.model_router, model, model_parameters)
+                    except ValueError as exc:
+                        raise HarnessError(422, str(exc)) from None
                     schedule_id = None
                     if _schedule_gate is not None:
                         principal, allowed_tools, schedule_id = await self.schedules.gate(
@@ -473,6 +488,7 @@ class HarnessService(AssetService):
                             "collaboration_mode": collaboration_mode,
                             "project_mode": project_mode,
                             "thread_id": thread.id if thread else None,
+                            **({"model_parameters": model_parameters} if model_parameters else {}),
                             **({"schedule_id": schedule_id} if schedule_id else {}),
                             **(
                                 {

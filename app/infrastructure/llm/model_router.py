@@ -16,7 +16,12 @@ from app.infrastructure.llm.circuit_breaker import CircuitBreaker
 from app.infrastructure.llm.types import ModelProvider
 
 from .anthropic_adapter import AnthropicClient
-from .model_config import parse_entries
+from .model_config import ModelEntry, parse_entries
+from .model_parameters import (
+    ModelParameterCapabilities,
+    normalize_model_parameters,
+    validate_model_parameters,
+)
 
 
 class LLMResponse(BaseModel):
@@ -41,6 +46,21 @@ class ModelConfig:
     extra: dict[str, Any] = field(default_factory=dict)
     label: str = ""
     api_version: str | None = None
+    parameters: ModelParameterCapabilities | dict = field(
+        default_factory=ModelParameterCapabilities
+    )
+
+    def __post_init__(self):
+        entry = ModelEntry(
+            model=self.model_id,
+            provider=self.provider,
+            base_url=self.base_url,
+            api_version=self.api_version,
+            extra=self.extra,
+            parameters=self.parameters,
+        )
+        self.extra = entry.extra
+        self.parameters = entry.parameters
 
 
 class ModelRouter:
@@ -98,6 +118,7 @@ class ModelRouter:
                 "label": cfg.label or f"{cfg.provider.value} · {cfg.model_id}",
                 "provider": cfg.provider.value,
                 "priority": cfg.priority,
+                "parameters": cfg.parameters.model_dump(),
             }
             for cfg in self._configs
         ]
@@ -134,22 +155,32 @@ class ModelRouter:
         self,
         messages: list[dict[str, Any]],
         model_preference: str | None = None,
+        model_parameters: dict | None = None,
         **kwargs: Any,
     ) -> LLMResponse:
         """智能路由到合适模型；失败时按候选顺序自动降级。"""
         async with self._semaphore:
-            return await self._chat(messages, model_preference, **kwargs)
+            return await self._chat(
+                messages, model_preference, normalize_model_parameters(model_parameters), **kwargs
+            )
 
-    async def _chat(self, messages, model_preference=None, **kwargs) -> LLMResponse:
+    async def _chat(
+        self, messages, model_preference=None, model_parameters=None, **kwargs
+    ) -> LLMResponse:
         candidates = self._select_candidates(model_preference)
 
         for cfg in candidates:
+            try:
+                validate_model_parameters(model_parameters, cfg.parameters)
+            except ValueError:
+                continue
             breaker = self._breakers[self._route_key(cfg)]
             try:
                 return await breaker.call(
                     self._try_model,
                     self._route_key(cfg),
                     messages,
+                    model_parameters=model_parameters,
                     **kwargs,
                 )
             except Exception as exc:
@@ -161,6 +192,7 @@ class ModelRouter:
         self,
         model_id: str,
         messages: list[dict[str, Any]],
+        model_parameters: dict | None = None,
         **kwargs: Any,
     ) -> LLMResponse:
         """尝试调用指定模型（经熔断器包装，不在此处重复熔断逻辑）。"""
@@ -173,6 +205,26 @@ class ModelRouter:
             "model": config.model_id,
             "messages": messages,
         }
+        if model_parameters:
+            # 旧 extra_body 的推理默认仍有效，任务覆盖时复制并清除同名注入。
+            if "extra_body" in params:
+                params["extra_body"] = {
+                    key: value
+                    for key, value in params["extra_body"].items()
+                    if key not in model_parameters
+                }
+            # 任务覆盖优先；推理请求未显式指定温度时，不携带任何隐式温度。
+            if "reasoning_effort" in model_parameters and "temperature" not in model_parameters:
+                params.pop("temperature", None)
+            for key in ("temperature", "reasoning_effort"):
+                if key in model_parameters:
+                    params[key] = model_parameters[key]
+            if "max_output_tokens" in model_parameters:
+                params.pop("max_tokens", None)
+                params.pop("max_completion_tokens", None)
+                params[config.parameters.output_token_parameter] = model_parameters[
+                    "max_output_tokens"
+                ]
         if config.provider == ModelProvider.ANTHROPIC:
             raw = await client.create(params)
             return LLMResponse(
@@ -228,6 +280,7 @@ def build_harness_router(settings) -> ModelRouter | None:
             extra=item.extra,
             label=item.label,
             api_version=item.api_version,
+            parameters=item.parameters,
         )
         route = ModelRouter._route_key(config)
         if route in seen:

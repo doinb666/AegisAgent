@@ -14,6 +14,7 @@ from app.etl.isolated import parse_isolated
 from app.harness.errors import HarnessError
 from app.harness.schedules import SCHEDULE_TOOLS
 from app.harness.task_inputs import validate_document_ids
+from app.infrastructure.llm.model_parameters import common_model_parameters
 
 router = APIRouter(tags=["AegisCode"])
 TERMINAL = {"completed", "failed", "cancelled", "interrupted"}
@@ -49,6 +50,7 @@ class RunInput(BaseModel):
     collaboration_mode: Literal["fork", "team"] | None = None
     project_mode: Literal["fork", "worktree"] | None = None
     document_ids: list[str] | None = Field(default=None, max_length=3)
+    model_parameters: dict | None = None
 
     @field_validator("document_ids", mode="before")
     @classmethod
@@ -141,6 +143,7 @@ async def capabilities(request: Request, principal=Depends(identity)):
         "name": "AegisCode",
         "models": sorted({model.model_id for model in models}),
         "model_routes": routes,
+        "model_parameters": common_model_parameters(routes),
         "model_protocols": ["openai", "custom", "anthropic", "azure", "ollama"],
         "collaboration": {
             "modes": ["fork", "team"],
@@ -171,14 +174,6 @@ async def create_run(
     principal=Depends(identity),
     idempotency_key: str = Header(alias="Idempotency-Key", min_length=1, max_length=256),
 ):
-    configured = getattr(service(request).model_router, "public_routes", lambda: [])()
-    if (
-        body.model
-        and configured
-        and body.model
-        not in {value for route in configured for value in (route["id"], route["model"])}
-    ):
-        raise HTTPException(422, "模型未配置，请从可用来源中选择")
     return await service(request).create_run(
         principal, idempotency_key=idempotency_key, **body.model_dump()
     )

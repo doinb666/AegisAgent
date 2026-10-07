@@ -46,6 +46,7 @@ def run_dict(run):
         "project_mode": run.config.get("project_mode"),
         "thread_id": run.config.get("thread_id"),
         "document_references": run.config.get("document_references", []),
+        "model_parameters": run.config.get("model_parameters", {}),
     }
 
 

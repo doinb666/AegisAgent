@@ -6,6 +6,7 @@ from urllib.parse import urlsplit
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
 
+from .model_parameters import ModelParameterCapabilities
 from .types import ModelProvider
 
 
@@ -21,6 +22,7 @@ class ModelEntry(BaseModel):
     priority: int = Field(default=0, strict=True, ge=0, le=1000)
     weight: float = Field(default=1, gt=0, le=10000, allow_inf_nan=False, strict=True)
     extra: dict = Field(default_factory=dict)
+    parameters: ModelParameterCapabilities = Field(default_factory=ModelParameterCapabilities)
 
     @field_validator("base_url")
     @classmethod
@@ -55,7 +57,17 @@ class ModelEntry(BaseModel):
             "seed",
             "extra_body",
         }
-        reserved = {"model", "messages", "tools", "tool_choice", "stream"}
+        reserved = {
+            "model",
+            "messages",
+            "tools",
+            "tool_choice",
+            "stream",
+            "model_parameters",
+            "max_output_tokens",
+        }
+        if "max_tokens" in value and "max_completion_tokens" in value:
+            raise ValueError("不能同时配置两个输出上限字段")
         if set(value) - allowed or len(json.dumps(value, allow_nan=False)) > 8000:
             raise ValueError("自定义参数不在允许范围内或过大")
         extra_body = value.get("extra_body", {})
@@ -80,6 +92,7 @@ class ModelEntry(BaseModel):
 
     @model_validator(mode="after")
     def required_provider_settings(self):
+        self.parameters.validate_provider(self.provider)
         if not self.model.strip():
             raise ValueError("模型名不能为空")
         if self.provider == ModelProvider.AZURE and (not self.base_url or not self.api_version):
