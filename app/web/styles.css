@@ -364,6 +364,36 @@ kbd { font-size: 10px; font-family: inherit; color: var(--muted); border: 1px so
   .settings-intro { padding: 16px; }
 }
 .schedules-view { padding: 32px; overflow-y: auto; min-height: 0; }
+.templates-view { padding: 32px; overflow-y: auto; min-height: 0; }
+.templates-intro { margin-bottom: 24px; border-left: 3px solid var(--accent); padding: 16px 24px; background: var(--soft); }
+.templates-intro h3 { font-size: 24px; margin: 10px 0; }
+.templates-intro p { line-height: 1.8; max-width: 740px; }
+.template-list { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 16px; }
+#templates-refresh { margin-bottom: 12px; }
+.template-row { border: 1px solid var(--line); border-radius: var(--radius); padding: 22px; min-width: 0; }
+.template-row h4, .mcp-guide-row h4 { margin: 0 0 12px; font-size: 17px; overflow-wrap: anywhere; }
+.template-row p { line-height: 1.7; overflow-wrap: anywhere; }
+.template-evidence { background: var(--soft-alt); padding: 12px; font-size: 12px; }
+.template-replace-panel { padding: 16px; margin-bottom: 16px; border: 1px solid var(--warning); }
+.template-replace-panel button { margin-right: 8px; }
+.task-documents { border-top: 1px solid var(--line); margin-top: 10px; padding-top: 8px; }
+.task-documents summary { padding: 8px 0; cursor: pointer; font-size: 12px; }
+.chat-view:has(.task-documents[open]) .welcome { margin: 0 auto 12px; }
+.chat-view:has(.task-documents[open]) .welcome-symbol { width: 28px; height: 28px; margin-bottom: 8px; }
+.chat-view:has(.task-documents[open]) .welcome h1 { margin: 8px 0; font-size: 24px; }
+.chat-view:has(.task-documents[open]) .suggestions { display: none; }
+.reference-toolbar, .reference-selected, .run-documents { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.reference-option { display: flex; gap: 10px; align-items: center; min-height: 44px; cursor: pointer; padding: 8px; border-bottom: 1px solid var(--line); }
+.reference-option input { width: 18px; height: 18px; min-height: 18px; flex-shrink: 0; accent-color: var(--action); }
+.reference-option span { min-width: 0; overflow-wrap: anywhere; }
+.reference-option small { display: block; padding-top: 4px; }
+#reference-list { max-height: 180px; overflow-y: auto; }
+.reference-selected button { max-width: 100%; overflow-wrap: anywhere; margin-top: 8px; font-size: 12px; }
+.run-documents { padding: 8px 0; font-size: 12px; overflow-wrap: anywhere; }
+.run-documents>span:not(.muted) { background: var(--soft-alt); padding: 8px; border-radius: var(--radius); }
+.mcp-guide { margin-top: 24px; border-top: 1px solid var(--line); padding-top: 20px; }
+.mcp-guide-row { padding: 16px; margin-top: 12px; background: var(--soft-alt); overflow-wrap: anywhere; }
+@media (max-width:700px) { .templates-view { padding: 24px 18px; } .templates-intro, .template-row { padding: 16px; } .template-list { grid-template-columns: 1fr; } }
 .schedule-intro { border-left: 3px solid var(--accent); background: var(--soft-alt); padding: 22px 24px; margin-bottom: 22px; }
 .schedule-intro h3 { font-size: 24px; margin: 8px 0 12px; }
 .schedule-intro p { max-width: 740px; line-height: 1.8; }

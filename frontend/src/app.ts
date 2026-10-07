@@ -8,6 +8,7 @@ import { initializeProjectThreads, type Thread } from "./project-threads";
 import { initializeNotifications } from "./notifications";
 import { initializeAssetBrowser } from "./asset-browser";
 import { initializeSchedules } from "./schedules";
+import { initializeTaskInputs } from "./task-inputs";
 
 const $ = (id: string): any => document.getElementById(id);
 const apiRoot = "/api/v1";
@@ -23,6 +24,13 @@ const canWrite = () => state.user && state.user.role !== "viewer";
 const assetBrowser = initializeAssetBrowser(renderAssets);
 const notifications = initializeNotifications({api, identity: () => state.token, openRun});
 const schedules = initializeSchedules({api, identity: () => state.token, canWrite, openRun});
+const taskInputs = initializeTaskInputs({api, identity: () => state.token, message: () => $("message").value,
+  prefill: async text => {
+    const opening=showView("chat"), valid=contextCurrent();
+    await opening; if(!valid())return;
+    $("message").value=text; $("message").focus(); notice("模板已预填，请检查目标与约束后再开始任务。");
+  },
+});
 const projectThreads = initializeProjectThreads({
   api, identity: () => state.token, canWrite, select: selectThread, notice,
   changed: thread => {
@@ -88,6 +96,7 @@ async function guardForm(action: () => Promise<void>, button: HTMLButtonElement,
   } finally { if (token === state.token) button.disabled = false; }
 }
 function resetLogin() {
+  taskInputs.clear();
   schedules.clear();
   notifications.clear();
   projectThreads.clear();
@@ -141,6 +150,8 @@ async function enter(user) {
   notifications.configure(cap);
   schedules.configure(cap);
   schedules.show(state.view==="schedules");
+  taskInputs.configure(cap);
+  taskInputs.show(state.view);
   $("member-form").closest("details").hidden=cap.role!=="admin";
   const bootstrap=await api("/auth/me");
   if(token!==state.token)return;
@@ -214,6 +225,7 @@ function message(role,text) {
   $("conversation").append(createMessage(role,text));
 }
 function renderRun(run) {
+  taskInputs.showRun(run);
   state.run=run; state.session=run.session_id;
   state.threadId=run.thread_id || null;
   $("run-status").textContent=statuses[run.status] || run.status;
@@ -233,6 +245,8 @@ function renderRun(run) {
   $("conversation").scrollTop=$("conversation").scrollHeight;
 }
 async function openRun(id) {
+  taskInputs.showRun(null);
+  taskInputs.resetSelection();
   state.generation++; state.stream?.abort(); state.cursor=0; $("timeline").replaceChildren();
   projectThreads.show(null);
   WorkspaceUI.clearFiles(); state.run=null;state.session=null;
@@ -308,6 +322,7 @@ async function watch(id,generation,token) {
   }
 }
 function newTask() {
+  taskInputs.resetSelection(); taskInputs.showRun(null);
   state.threadId=null;projectThreads.show(null);
   state.generation++; state.stream?.abort(); state.run=null; state.session=null; state.cursor=0;
   setRunLoading(false);
@@ -342,7 +357,8 @@ $("composer").addEventListener("submit", event=>{
   event.preventDefault();if(state.runLoading || projectThreads.isArchived())return;
   guard(async()=>{
     const valid=contextCurrent();
-    const body=JSON.stringify({message:$("message").value,session_id:state.session,mode:$("mode").value,model:$("model").value || null,collaboration_mode:canWrite()?$("collaboration-mode").value:null,project_mode:canWrite()?($("project-mode").value || null):null,...(projectThreads.enabled()?{thread_id:state.threadId || null}:{})});
+    const documentIds=taskInputs.documentIds();
+    const body=JSON.stringify({message:$("message").value,session_id:state.session,mode:$("mode").value,model:$("model").value || null,collaboration_mode:canWrite()?$("collaboration-mode").value:null,project_mode:canWrite()?($("project-mode").value || null):null,...(projectThreads.enabled()?{thread_id:state.threadId || null}:{}),...(documentIds.length?{document_ids:documentIds}:{})});
     if(!state.pendingRequest || state.pendingRequest.body!==body) state.pendingRequest={body,key:crypto.randomUUID()};
     sessionStorage.setItem("aegis-pending-request",JSON.stringify(state.pendingRequest));
     const run=await api("/runs",{method:"POST",headers:{"Idempotency-Key":state.pendingRequest.key},body});
@@ -374,19 +390,21 @@ async function showView(view) {
   if(view==="chat" && state.view!=="chat" && state.run)return openRun(state.run.id);
   state.view=view;state.viewGeneration++;state.assetsGeneration++;
   if(view!=="chat"){state.generation++;state.stream?.abort();WorkspaceUI.clearFiles();setRunLoading(false);}
-  const titles: Record<string, string>={chat:"任务空间",projects:"项目",memories:"长期记忆",skills:"技能库",documents:"知识库",schedules:"定时任务",settings:"能力与设置"};
+  const titles: Record<string, string>={chat:"任务空间",projects:"项目",memories:"长期记忆",skills:"技能库",documents:"知识库",schedules:"定时任务",templates:"任务模板",settings:"能力与设置"};
   $("view-title").textContent=titles[view]; $("location").textContent=titles[view];
   $("chat-view").hidden=view!=="chat"; $("settings-view").hidden=view!=="settings";
-  $("assets-view").hidden=['chat','settings','schedules'].includes(view);
+  $("assets-view").hidden=['chat','settings','schedules','templates'].includes(view);
+  $("templates-view").hidden=view!=="templates";
   $("schedules-view").hidden=view!=="schedules";
   schedules.show(view==="schedules");
+  taskInputs.show(view);
   document.querySelectorAll<HTMLElement>("[data-view]").forEach(button => {
     const current = button.dataset.view === view;
     button.classList.toggle("selected", current);
     if (current) button.setAttribute("aria-current", "page");
     else button.removeAttribute("aria-current");
   });
-  if(!['chat','settings','schedules'].includes(view)) {
+  if(!['chat','settings','schedules','templates'].includes(view)) {
     assetBrowser.reset();state.assets=[];
     $("skill-directory-filter").value="";
     for (const id of ["asset-error", "upload-error"]) $(id).textContent="";

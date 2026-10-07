@@ -63,6 +63,7 @@ export function initializeNavigation(
       ["skills", "技能库", "Skills：审阅、修订和复用技能"],
       ["documents", "知识库", "上传与检索私有资料"],
       ["schedules", "定时任务", "安排只读任务、暂停计划与查看触发记录"],
+      ["templates", "任务模板", "选择有验收要求的任务示例，仅预填不执行"],
       ["settings", "能力与设置", "查看模型接入和企业成员"],
     ].map(([view, title, description]) => ({title, description, run: () => showView(view)})),
     {title: "搜索任务", description: "按内容和状态查找历史任务", run: () => {

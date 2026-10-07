@@ -24,6 +24,7 @@ def main():
         "scripts.assets_browser_acceptance",
         "scripts.skill_browser_acceptance",
         "scripts.schedules_browser_acceptance",
+        "scripts.task_inputs_browser_acceptance",
     }
     if not set(args.module) <= allowed:
         parser.error("请选择已登记的验收模块")
@@ -62,7 +63,7 @@ def main():
                     if process.poll() is not None:
                         raise RuntimeError("测试服务退出，请检查测试环境")
                     try:
-                        with urllib.request.urlopen(url, timeout=1) as response:
+                        with urllib.request.urlopen(url, timeout=5) as response:
                             if response.status == 200:
                                 break
                             last_probe = f"HTTP {response.status}"

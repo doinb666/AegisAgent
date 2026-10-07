@@ -49,6 +49,7 @@
         <button data-view="skills" class="nav-button" title="审阅、启用和复用任务经验"><svg class="icon" aria-hidden="true"><use href="#icon-skill"/></svg>技能库</button>
         <button data-view="documents" class="nav-button" title="上传资料，供本人任务检索"><svg class="icon" aria-hidden="true"><use href="#icon-book"/></svg>知识库</button>
         <button data-view="schedules" class="nav-button" title="安排只读任务并查看触发记录"><svg class="icon" aria-hidden="true"><use href="#icon-clock"/></svg>定时任务</button>
+        <button data-view="templates" class="nav-button" title="从可验证的示例开始，选择后仅预填"><svg class="icon" aria-hidden="true"><use href="#icon-skill"/></svg>任务模板</button>
         <button data-view="settings" class="nav-button" title="查看服务能力、模型接入与成员管理"><svg class="icon" aria-hidden="true"><use href="#icon-settings"/></svg>能力与设置</button>
       </nav>
       <div class="sidebar-switch" aria-label="选择记录类型"><button id="sidebar-projects" type="button" aria-pressed="false" aria-controls="sidebar-project-panel">项目会话</button><button id="sidebar-history" type="button" aria-pressed="true" aria-controls="run-navigation">任务历史</button></div>
@@ -97,8 +98,11 @@
           <div id="thread-actions"><button id="thread-rename" type="button">重命名</button><button id="thread-archive" type="button">归档会话</button></div>
           <form id="thread-rename-form" hidden><label for="thread-title-input">会话标题</label><input id="thread-title-input" maxlength="200" required><button class="primary" type="submit">保存标题</button><button id="thread-rename-cancel" type="button">取消</button></form>
         </section>
+        <div id="run-documents" class="run-documents" aria-label="本次任务资料来源" hidden></div>
         <form id="composer" class="composer"><label for="message" class="sr-only">描述你的任务</label>
           <textarea id="message" placeholder="描述任务，或添加需要遵守的约束…" rows="2" maxlength="16000" required></textarea>
+          <details id="task-documents" class="task-documents" hidden><summary>引用本人资料</summary><p class="muted">最多选择3份已解析资料，任务记录保存来源与版本。超长内容使用有界预览，需要时再检索。</p><div class="reference-toolbar"><button id="references-refresh" type="button">刷新资料</button><span id="references-count" class="muted"></span></div><p id="references-status" class="error" role="status"></p><div id="reference-list"></div><button id="references-more" type="button" hidden>更多资料</button></details>
+          <div id="reference-selected" class="reference-selected" aria-label="已选任务资料"></div>
           <div class="composer-bottom"><div><label for="mode" class="sr-only">执行方式</label><select id="mode"><option value="react">直接执行</option><option value="plan">先规划</option><option value="reflection">审查回答</option></select>
             <label for="model" class="sr-only">模型</label><select id="model"><option value="">自动选择模型</option></select></div>
             <button id="send" class="primary" type="submit">开始任务 <svg class="icon" aria-hidden="true"><use href="#icon-arrow"/></svg></button></div>
@@ -138,6 +142,12 @@
         <div id="asset-list" class="asset-list"></div>
         <button id="assets-more" type="button" hidden>显示更多内容</button>
       </section>
+      <section id="templates-view" class="view templates-view" hidden aria-label="任务模板">
+        <div class="templates-intro"><span class="eyebrow">从一个清晰的目标开始</span><h3>选择方法，再交给助手</h3><p>每个模板给出输入、所需能力与验收要求。选择后仅预填任务，你可以先修改约束，再决定是否执行。</p></div>
+        <p id="templates-unavailable" class="error" hidden>当前服务尚未提供模板能力，请更新服务后刷新。</p><button id="templates-refresh">刷新模板</button><p id="template-status" class="error" role="status"></p>
+        <section id="template-replace-panel" class="template-replace-panel" aria-label="确认预填内容" hidden><p id="template-replace-description"></p><button id="template-keep" type="button">保留原内容</button><button id="template-replace" type="button" class="primary">替换为模板</button></section>
+        <div id="template-list" class="template-list"></div>
+      </section>
       <section id="schedules-view" class="view schedules-view" hidden aria-label="定时任务管理">
         <div class="schedule-intro"><span class="eyebrow">按时处理 · 有据可查</span><h3>让例行核对按计划进行</h3><p>安排资料检索、技能读取或计算核对，触发后会生成独立任务，断开页面也能继续。</p><p class="muted">自动任务仅使用只读工具，不允许写文件、执行代码、调用外部 MCP 或委派子任务。停机错过只补最近一次，任务重叠会跳过并留痕。</p></div>
         <p id="schedule-unavailable" class="error" hidden>定时能力尚未启用。旧数据库需先执行显式迁移，再重启服务。</p>
@@ -153,6 +163,7 @@
         <section id="schedule-detail" class="schedule-detail" aria-label="触发记录" hidden></section>
       </section>
       <section id="settings-view" class="view settings-view" hidden><div class="settings-intro"><span class="eyebrow">工作空间配置</span><h3>让能力与任务相匹配</h3><p class="muted">先查看当前模型与工具，再接入自己的服务。这里展示配置，连接健康需通过实际任务验证。</p></div><h3>当前能力</h3><dl id="capability-list" class="capability-list"></dl><details class="capability-evidence"><summary>查看完整配置证据</summary><pre id="capabilities"></pre></details>
+        <section id="mcp-guide" class="mcp-guide" aria-label="MCP服务授权导览" hidden><h3>我的外部工具</h3><p class="muted">只展示本人获授权的服务与工具白名单。配置就绪不代表连接成功，实际发现与调用仍需审批；刷新不会联系外部服务。</p><button id="mcp-guide-refresh" type="button">刷新授权配置</button><p id="mcp-guide-status" class="error" role="status"></p><div id="mcp-guide-list"></div></section>
         <details id="model-config-builder"><summary>接入自己的模型服务</summary><ol class="setup-steps"><li>选择协议与模型</li><li>生成配置示例</li><li>管理员配置后重启</li></ol><p class="muted">生成配置示例后，由管理员写入服务端 .env 并重启。这里只填写密钥环境变量名，不填写密钥。</p>
           <form id="provider-form"><div class="provider-grid">
             <div><label for="provider-kind">接口协议</label><select id="provider-kind"><option value="custom">自定义 OpenAI 兼容</option><option value="openai">OpenAI</option><option value="anthropic">Anthropic 原生</option><option value="azure">Azure OpenAI</option><option value="ollama">本地 Ollama</option></select></div>
