@@ -6,6 +6,7 @@ import { createMessage } from "./reply-view";
 import { createThreadHistory } from "./thread-view";
 import { initializeProjectThreads, type Thread } from "./project-threads";
 import { initializeNotifications } from "./notifications";
+import { initializeAssetBrowser } from "./asset-browser";
 
 const $ = (id: string): any => document.getElementById(id);
 const apiRoot = "/api/v1";
@@ -18,6 +19,7 @@ const kinds = {profile:"偏好",preference:"偏好",constraint:"约束",memory:"
 const assetStates = {draft:"候选",active:"已启用",retired:"已退役"};
 function notice(text) { $("notice").textContent = text; }
 const canWrite = () => state.user && state.user.role !== "viewer";
+const assetBrowser = initializeAssetBrowser(renderAssets);
 const notifications = initializeNotifications({api, identity: () => state.token, openRun});
 const projectThreads = initializeProjectThreads({
   api, identity: () => state.token, canWrite, select: selectThread, notice,
@@ -49,7 +51,11 @@ async function api(path: string, options: any = {}) {
   const headers = new Headers(options.headers || {});
   if (requestToken) headers.set("Authorization", `Bearer ${requestToken}`);
   if (options.body && !(options.body instanceof FormData)) headers.set("Content-Type", "application/json");
-  const response = await fetch(apiRoot + path, {...options, headers});
+  let response: Response;
+  try { response = await fetch(apiRoot + path, {...options, headers}); }
+  catch {
+    throw new Error("无法连接服务，请检查服务是否运行以及网络连接；确认后再重试。");
+  }
   let data;
   try { data = await response.json(); }
   catch { if(response.ok) throw new Error("服务返回了无法读取的数据，请刷新后重试。"); }
@@ -66,6 +72,18 @@ async function guard(action, button=null) {
   if (button) button.disabled = true;
   try { await action(); } catch(error) { if(valid()) notice(error.message); }
   finally { if (button && token===state.token) button.disabled = button.id==="send" && (state.runLoading || projectThreads.isArchived()); }
+}
+async function guardForm(action: () => Promise<void>, button: HTMLButtonElement, errorId: string): Promise<void> {
+  const token = state.token, valid = contextCurrent();
+  const error = $(errorId);
+  error.textContent = ""; button.disabled = true;
+  try { await action(); }
+  catch (failure) {
+    if (valid()) {
+      error.textContent = failure instanceof Error ? failure.message : "操作失败，请重试。";
+      error.focus();
+    }
+  } finally { if (token === state.token) button.disabled = false; }
 }
 function resetLogin() {
   notifications.clear();
@@ -90,6 +108,9 @@ function resetLogin() {
   $("provider-form").reset();$("provider-kind").dispatchEvent(new Event("change"));
   $("member-form").closest("details").hidden=true;
   $("account").textContent="";
+  assetBrowser.reset();
+  for (const id of ["asset-error", "upload-error", "member-error"]) $(id).textContent="";
+  for (const id of ["asset-form", "upload-form", "member-form"]) $(id).querySelector('button[type="submit"],button.primary').disabled=false;
   sessionStorage.removeItem("aegis-pending-request"); sessionStorage.removeItem("aegis-last-run");
   sessionStorage.removeItem("aegis-token"); $("shell").hidden=true; $("auth").hidden=false;
   $("auth-theme-slot").append($("theme-toggle"));
@@ -359,6 +380,9 @@ async function showView(view) {
     else button.removeAttribute("aria-current");
   });
   if(!['chat','settings'].includes(view)) {
+    assetBrowser.reset();state.assets=[];
+    $("skill-directory-filter").value="";
+    for (const id of ["asset-error", "upload-error"]) $(id).textContent="";
     $("asset-form").hidden=true; $("upload-form").hidden=view!=="documents" || !canWrite(); $("add-asset").hidden=view==="documents" || !canWrite();
     $("skill-controls").hidden=view!=="skills";
     closeSkillImport();
@@ -384,7 +408,17 @@ async function loadAssets() {
   $("asset-list").replaceChildren(WorkspaceUI.node("p","正在读取资产…","empty"));
   let all;
   try { all=await api("/assets"); }
-  catch(error) { if(valid()) $("asset-list").replaceChildren(WorkspaceUI.node("p",`资产读取失败：${error.message}`,"empty"));return; }
+  catch(error) {
+    if(valid()) {
+      $("asset-count").textContent="读取失败，可重试。";
+      $("assets-more").hidden=true;
+      const message=WorkspaceUI.node("p",`内容读取失败：${error.message}`,"error");
+      const retry=WorkspaceUI.node("button","重新读取");retry.type="button";
+      retry.onclick=()=>guard(()=>loadAssets(),retry);
+      $("asset-list").replaceChildren(message,retry);
+    }
+    return;
+  }
   if(!valid())return;
   const filter={skills:['skill','procedure'],memories:['profile','preference','constraint','memory','episodic'],projects:['project'],documents:['document']}[view];
   state.assets=all.filter(a=>filter.includes(a.kind));
@@ -407,15 +441,31 @@ function refreshSkillDirectories() {
 }
 function renderAssets() {
   const directory=state.view==="skills" ? $("skill-directory-filter").value : "";
-  const assets=state.assets.filter(a=>!directory || (a.metadata.directory || "未分类")===directory);
-  $("asset-list").replaceChildren();
-  if(!assets.length) { const empty=document.createElement("p");empty.className="empty";empty.textContent="这里还没有内容。添加资料或完成任务后，经验会逐步积累。";$("asset-list").append(empty); }
+  const assets=assetBrowser.select(state.assets.filter(a=>!directory || (a.metadata.directory || "未分类")===directory));
+  const fragment=document.createDocumentFragment();
+  if(!assets.length) {
+    const empty=document.createElement("div");empty.className="asset-empty";
+    const filtered=state.assets.length>0;
+    const title=WorkspaceUI.node("h3",filtered?"没有匹配的内容":"从一条可复用的内容开始");
+    const suggestions={memories:"添加回答习惯、个人约束或长期经验，审阅启用后可跨会话使用。",skills:"导入 SKILL.md 或完成任务并反馈，再审阅提炼出的技能候选。",projects:"添加项目目标与边界，启用后创建独立会话。",documents:"上传文本资料，让后续问答有据可查。"};
+    empty.append(title,WorkspaceUI.node("p",filtered?"换个关键词或清除状态／目录筛选。":suggestions[state.view],"muted"));
+    fragment.append(empty);
+  }
   for(const asset of assets) {
     const row=document.createElement("article"); row.className="asset-row";
     const h=document.createElement("h3");h.textContent=asset.name;
-    const meta=document.createElement("div");meta.className="asset-meta";meta.textContent=`${kinds[asset.kind] || asset.kind} · ${assetStates[asset.status] || asset.status} · v${asset.version}`;
-    const content=document.createElement("div"); content.className="asset-detail";content.textContent=asset.content.slice(0,2400);
+    const meta=document.createElement("div");meta.className="asset-meta";
+    const badge=WorkspaceUI.node("span",assetStates[asset.status] || asset.status,"asset-state");badge.dataset.status=asset.status;
+    meta.append(WorkspaceUI.node("span",kinds[asset.kind] || asset.kind),badge,WorkspaceUI.node("span",`v${asset.version}`));
+    const content=document.createElement("div"); content.className="asset-detail";content.textContent=asset.content.slice(0,180);
     row.append(h,meta,content);
+    if(asset.content.length>180) {
+      const details=document.createElement("details");details.className="asset-content-preview";
+      const body=document.createElement("pre");
+      details.append(WorkspaceUI.node("summary","查看完整正文"),body);
+      details.ontoggle=()=>{if(details.open && !body.textContent)body.textContent=asset.content;};
+      row.append(details);
+    }
     if(asset.kind==="skill") appendSkillControls(row,asset);
     if(asset.metadata.source_run_id) {const source=document.createElement("button");source.textContent="查看来源任务";source.onclick=()=>guard(()=>openRun(asset.metadata.source_run_id));row.append(source);}
     if(asset.kind==="project") {
@@ -431,8 +481,7 @@ function renderAssets() {
       const button=document.createElement("button");button.textContent=label;button.onclick=()=>guard(()=>mutateAsset(`/assets/${asset.id}/state`,{status:next}),button);row.append(button);
     }
     const edit=document.createElement("button");edit.textContent="修订";edit.onclick=()=>{
-      $("asset-form").hidden=false;state.editingAsset=asset;
-      $("asset-name").value=asset.name;$("asset-content").value=asset.content;$("asset-kind").value=asset.kind;
+      openAssetEditor(asset);
     };if(canWrite() && asset.kind!=="document")row.append(edit);
     const history=document.createElement("button");history.textContent="版本记录";history.onclick=()=>guard(async()=>{
       row.querySelector(".version-history")?.remove(); const versions=document.createElement("div");versions.className="version-history";
@@ -443,8 +492,11 @@ function renderAssets() {
         restore.onclick=()=>guard(()=>mutateAsset(`/assets/${asset.id}/restore`,{version:entry.version}),restore);versions.append(restore);}
       row.append(versions);
     });row.append(history);
-    $("asset-list").append(row);
+    const actions=document.createElement("div");actions.className="asset-actions";
+    Array.from(row.children).filter(child=>child.tagName==="BUTTON").forEach(button=>actions.append(button));
+    row.append(actions);fragment.append(row);
   }
+  $("asset-list").replaceChildren(fragment);
 }
 function downloadText(filename,content,type) {
   const url=URL.createObjectURL(new Blob([content],{type}));
@@ -523,23 +575,43 @@ $("skill-import-form").addEventListener("submit",async event=>{
     }
   } finally {if(importToken===state.token) button.disabled=false;}
 });
-$("add-asset").onclick=()=>{$("asset-form").hidden=false;state.editingAsset=null;$("asset-name").value="";$("asset-content").value="";$("asset-kind").value={skills:"skill",projects:"project",memories:"profile"}[state.view];$("asset-name").focus();};
-$("close-editor").onclick=()=>{$("asset-form").hidden=true;};
+function openAssetEditor(existing: any = null): void {
+  if($("asset-form").querySelector('button[type="submit"]').disabled) {
+    notice("正在保存，请等当前操作完成后再编辑其他内容。");return;
+  }
+  state.editingAsset=existing;$("asset-form").hidden=false;$("asset-error").textContent="";
+  const available={skills:["skill","procedure"],projects:["project"],memories:["profile","preference","constraint","memory","episodic"]}[state.view] || [];
+  for (const option of $("asset-kind").options) {
+    option.hidden=!available.includes(option.value);option.disabled=option.hidden;
+  }
+  $("asset-kind").disabled=Boolean(existing);
+  $("asset-kind").value=existing?.kind || available[0];
+  $("asset-name").value=existing?.name || "";$("asset-content").value=existing?.content || "";
+  $("asset-editor-title").textContent=existing?`修订 ${existing.name}`:"添加"+{skills:"技能候选",projects:"项目",memories:"个人记忆"}[state.view];
+  $("asset-editor-hint").textContent=existing?"修订后重新保存为候选，原验证会撤销；请再次审核适用边界。":"内容先保存为候选，检查来源和适用边界后再启用。";
+  $("asset-name").focus();$("asset-form").scrollIntoView({block:"nearest"});
+}
+$("add-asset").onclick=()=>openAssetEditor();
+$("close-editor").onclick=()=>{$("asset-form").hidden=true;$("add-asset").focus();};
+$("assets-refresh").onclick=event=>guard(()=>loadAssets(),event.currentTarget);
 $("asset-form").addEventListener("submit",event=>{
-  event.preventDefault();guard(async()=>{
+  event.preventDefault();guardForm(async()=>{
     if(!canWrite())return;
     const valid=contextCurrent();
     const existing=state.editingAsset;
-    const payload: any={kind:$("asset-kind").value,name:$("asset-name").value,content:$("asset-content").value,status:"draft"};
+    const payload: any={kind:$("asset-kind").value,name:$("asset-name").value.trim(),content:$("asset-content").value,status:"draft"};
+    if(!payload.name || !payload.content.trim())throw new Error("名称与内容不能只包含空白，请补充后重试。");
     if(existing) {payload.metadata=existing.metadata;payload.expected_version=existing.version;}
-    await api(existing?`/assets/${existing.id}`:"/assets",{method:existing?"PUT":"POST",body:JSON.stringify(payload)});
+    const saved=await api(existing?`/assets/${existing.id}`:"/assets",{method:existing?"PUT":"POST",body:JSON.stringify(payload)});
     if(!valid())return;
-    $("asset-form").hidden=true;state.editingAsset=null;await loadAssets();if(valid())notice("已保存候选，可审阅后启用");
-  },event.submitter);
+    $("asset-form").hidden=true;state.editingAsset=null;
+    assetBrowser.reveal(saved.name);$("skill-directory-filter").value="";
+    await loadAssets();if(valid())notice("已保存候选并定位该内容，可审阅后启用。");
+  },event.submitter,"asset-error");
 });
 $("upload-form").addEventListener("submit",event=>{
   event.preventDefault();
-  guard(async()=>{
+  guardForm(async()=>{
     if(!canWrite())return;
     const valid=contextCurrent();
     const file=$("document-file").files[0];
@@ -553,14 +625,14 @@ $("upload-form").addEventListener("submit",event=>{
     let status=uploaded.reused ? "已复用原有文档" : "文档已入库";
     if(warnings.length) status=`文档已保存。${warnings.join("；")}`;
     notice(status);
-  },event.submitter);
+  },event.submitter,"upload-error");
 });
-$("member-form").addEventListener("submit",event=>{event.preventDefault();guard(async()=>{
+$("member-form").addEventListener("submit",event=>{event.preventDefault();guardForm(async()=>{
   if(state.user?.role!=="admin")return;
   const valid=contextCurrent();
   await api("/auth/members",{method:"POST",body:JSON.stringify({username:$("member-name").value,password:$("member-password").value,role:$("member-role").value})});
   if(valid()){$("member-form").reset();notice("企业成员已创建");}
-},event.submitter);});
+},event.submitter,"member-error");});
 if(state.token) guard(async()=>{
   const valid=contextCurrent();
   const user=await api("/auth/me");if(!valid())return;

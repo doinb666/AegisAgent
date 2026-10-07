@@ -1,5 +1,7 @@
 "use strict";
 
+import { copyText } from "./clipboard";
+
 // 工作区选项与模型配置示例均使用安全文本；不保存或读取服务端密钥。
 const WorkspaceOptions = (() => {
   type ModelEntry = {
@@ -22,6 +24,7 @@ const WorkspaceOptions = (() => {
   let nodes: any[] = [];
   const acceptances = new Map<string, any>();
   let entries: ModelEntry[] = [];
+  let configGeneration = 0;
   const states = {pending:"等待前驱",running:"正在执行",completed:"执行完成",failed:"执行失败",blocked:"已阻断",cancelled:"已停止",interrupted:"需核对"};
 
   function configureCollaboration(cap, writable) {
@@ -106,13 +109,25 @@ const WorkspaceOptions = (() => {
       byId("provider-error").textContent = "同一来源与模型已在示例中。"; return;
     }
     entries.push(entry);
+    configGeneration++;
     byId("provider-error").textContent = "";
     // 这是 dotenv 文本，单引号仅按 dotenv 规则转义，不能作为 shell 命令执行。
     byId("model-config-preview").textContent = "AEGIS_MODELS_JSON='" + JSON.stringify(entries).replaceAll("'", "\\'") + "'";
+    byId("provider-copy").disabled = false;
+    byId("provider-copy-status").textContent = "";
+  };
+  byId("provider-copy").onclick = async () => {
+    const button = byId("provider-copy");button.disabled = true;
+    const generation = configGeneration;
+    const current = () => generation === configGeneration;
+    await copyText(byId("model-config-preview").textContent, byId("model-config-preview"),
+      byId("provider-copy-status"), "配置", current);
+    if (current()) button.disabled = entries.length === 0;
   };
   byId("provider-clear").onclick = () => {
-    entries = []; byId("provider-error").textContent = "";
+    entries = []; configGeneration++;byId("provider-error").textContent = "";
     byId("model-config-preview").textContent = "尚未生成配置。已有服务配置不会被这里修改。";
+    byId("provider-copy").disabled = true;byId("provider-copy-status").textContent = "";
   };
   return Object.freeze({configureCollaboration, clearCollaboration, renderCollaboration});
 })();

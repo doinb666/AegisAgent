@@ -21,6 +21,8 @@ def main():
         "scripts.workbench_browser_acceptance",
         "scripts.notifications_browser_acceptance",
         "scripts.layout_browser_acceptance",
+        "scripts.assets_browser_acceptance",
+        "scripts.skill_browser_acceptance",
     }
     if not set(args.module) <= allowed:
         parser.error("请选择已登记的验收模块")
@@ -52,6 +54,7 @@ def main():
                 creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0,
             )
             url = f"http://127.0.0.1:{port}"
+            last_probe = "尚未探测"
             try:
                 deadline = time.monotonic() + 60
                 while True:
@@ -61,21 +64,32 @@ def main():
                         with urllib.request.urlopen(url, timeout=1) as response:
                             if response.status == 200:
                                 break
-                    except OSError:
-                        pass
+                            last_probe = f"HTTP {response.status}"
+                    except OSError as error:
+                        last_probe = f"{type(error).__name__}: {error}"
                     if time.monotonic() >= deadline:
-                        raise RuntimeError("测试服务未就绪")
+                        raise RuntimeError(f"测试服务未就绪，最后探测：{last_probe}")
                     time.sleep(0.1)
                 for module in args.module:
                     extra = []
                     if module == "scripts.workbench_browser_acceptance":
                         extra = ["--output", str(Path(temporary) / "workbench-screenshots")]
+                    elif module == "scripts.skill_browser_acceptance":
+                        extra = ["--output", str(Path(temporary) / "skill-screenshots")]
                     subprocess.run(
                         [sys.executable, "-m", module, "--url", url, *extra],
                         env=environment,
                         check=True,
                         timeout=240,
                     )
+            except Exception:
+                # 仅输出本脚本的确定性验收服务日志，避免临时目录回收后丢失故障证据。
+                log.flush()
+                print(
+                    (Path(temporary) / "server.log").read_text(encoding="utf-8")[-4000:],
+                    file=sys.stderr,
+                )
+                raise
             finally:
                 if process.poll() is None:
                     process.send_signal(

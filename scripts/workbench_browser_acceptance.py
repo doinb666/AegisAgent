@@ -254,6 +254,7 @@ def main():
         page.route("**/api/v1/assets", hold_first_assets)
         page.locator('[data-view="skills"]').click()
         page.locator('[data-view="memories"]').click()
+        page.locator("#asset-search").fill("文本边界")
         expect(page.locator("#asset-list")).to_contain_text("文本边界")
         for route in delayed_assets:
             route.fulfill(response=route.fetch())

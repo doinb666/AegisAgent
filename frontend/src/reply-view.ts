@@ -1,3 +1,5 @@
+import { copyText } from "./clipboard";
+
 // 所有模型内容均以文本节点渲染，仅支持有界的段落、标题、行内代码和代码围栏。
 export function createMessage(role: string, text: string): HTMLElement {
   const article = document.createElement("article");
@@ -43,22 +45,9 @@ function codeBlock(language: string, content: string): HTMLElement {
   status.setAttribute("role", "status");
   copy.onclick = async () => {
     copy.disabled = true;
-    try {
-      await navigator.clipboard.writeText(content);
-      copy.textContent = "已复制";
-      status.textContent = "代码已复制到剪贴板。";
-    } catch {
-      copy.textContent = "复制代码";
-      const range = document.createRange();
-      range.selectNodeContents(code);
-      const selection = window.getSelection();
-      selection?.removeAllRanges();
-      selection?.addRange(range);
-      pre.focus();
-      status.textContent = "剪贴板不可用，已选中代码，请手动复制。";
-    } finally {
-      copy.disabled = false;
-    }
+    const copied = await copyText(content, pre, status, "代码");
+    copy.textContent = copied ? "已复制" : "复制代码";
+    copy.disabled = false;
   };
   header.append(label, copy);
   block.append(header, pre, status);

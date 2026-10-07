@@ -110,6 +110,8 @@
       </section>
       <section id="assets-view" class="view assets-view" hidden>
         <div class="view-heading"><p id="assets-description"></p><button id="add-asset" class="primary">添加</button></div>
+        <div class="asset-toolbar"><div><label for="asset-search">查找内容</label><input id="asset-search" type="search" maxlength="200" placeholder="搜索名称、描述或标签…"></div><div><label for="asset-status-filter">使用状态</label><select id="asset-status-filter"><option value="">全部状态</option><option value="draft">待审核候选</option><option value="active">已启用</option><option value="retired">已退役</option></select></div><button id="assets-refresh" type="button">刷新内容</button><button id="asset-filters-clear" type="button" hidden>清除筛选</button></div>
+        <p id="asset-count" class="muted" role="status" aria-live="polite"></p>
         <div id="skill-controls" class="skill-toolbar" hidden>
           <div><label for="skill-directory-filter">技能目录</label><select id="skill-directory-filter"><option value="">全部目录</option></select></div>
           <button id="import-skill" type="button" aria-expanded="false" aria-controls="skill-import-form">导入技能文件</button>
@@ -123,16 +125,19 @@
           <button type="submit" class="primary">导入为候选</button><button id="close-skill-import" type="button">取消</button>
         </form>
         <form id="asset-form" class="asset-editor" hidden>
-          <label for="asset-name">名称</label><input id="asset-name" required maxlength="200">
+          <h3 id="asset-editor-title">添加内容</h3><p id="asset-editor-hint" class="muted">内容先保存为候选，检查后再启用。</p>
+          <label for="asset-name">名称</label><input id="asset-name" required maxlength="200" aria-describedby="asset-error">
           <label for="asset-kind">类型</label><select id="asset-kind"><option value="profile">画像</option><option value="preference">偏好</option><option value="constraint">约束与边界</option><option value="memory">长期记忆</option><option value="episodic">情景经验</option><option value="skill">Skill</option><option value="procedure">程序性经验</option><option value="project">项目</option></select>
-          <label for="asset-content">内容、触发条件与验证步骤</label><textarea id="asset-content" required maxlength="16000" rows="6"></textarea>
+          <label for="asset-content">内容、触发条件与验证步骤</label><textarea id="asset-content" required maxlength="16000" rows="6" aria-describedby="asset-editor-hint asset-error"></textarea>
+          <p id="asset-error" class="error" role="alert" tabindex="-1"></p>
           <button type="submit" class="primary">保存候选</button><button id="close-editor" type="button">取消</button>
         </form>
-        <form id="upload-form" class="upload-area" hidden><label for="document-file">上传 TXT、Markdown 或 PDF</label><input id="document-file" type="file" accept=".txt,.md,.pdf" required><button class="primary">上传资料</button></form>
+        <form id="upload-form" class="upload-area" hidden><h3>把资料带入任务</h3><p class="muted">支持 TXT、Markdown 和文本型 PDF；扫描件需先做文字识别。上传后可供本账号检索。</p><label for="document-file">选择资料</label><input id="document-file" type="file" accept=".txt,.md,.pdf" required aria-describedby="upload-error"><p id="upload-error" class="error" role="alert" tabindex="-1"></p><button class="primary">上传资料</button></form>
         <div id="asset-list" class="asset-list"></div>
+        <button id="assets-more" type="button" hidden>显示更多内容</button>
       </section>
-      <section id="settings-view" class="view settings-view" hidden><h3>当前能力</h3><p class="muted">按服务端配置展示。配置存在不代表连接健康或任务已验证。</p><dl id="capability-list" class="capability-list"></dl><details class="capability-evidence"><summary>查看完整配置证据</summary><pre id="capabilities"></pre></details>
-        <details id="model-config-builder"><summary>接入自己的模型服务</summary><p class="muted">生成配置示例后，由管理员写入服务端 .env 并重启。这里只填写密钥环境变量名，不填写密钥。</p>
+      <section id="settings-view" class="view settings-view" hidden><div class="settings-intro"><span class="eyebrow">工作空间配置</span><h3>让能力与任务相匹配</h3><p class="muted">先查看当前模型与工具，再接入自己的服务。这里展示配置，连接健康需通过实际任务验证。</p></div><h3>当前能力</h3><dl id="capability-list" class="capability-list"></dl><details class="capability-evidence"><summary>查看完整配置证据</summary><pre id="capabilities"></pre></details>
+        <details id="model-config-builder"><summary>接入自己的模型服务</summary><ol class="setup-steps"><li>选择协议与模型</li><li>生成配置示例</li><li>管理员配置后重启</li></ol><p class="muted">生成配置示例后，由管理员写入服务端 .env 并重启。这里只填写密钥环境变量名，不填写密钥。</p>
           <form id="provider-form"><div class="provider-grid">
             <div><label for="provider-kind">接口协议</label><select id="provider-kind"><option value="custom">自定义 OpenAI 兼容</option><option value="openai">OpenAI</option><option value="anthropic">Anthropic 原生</option><option value="azure">Azure OpenAI</option><option value="ollama">本地 Ollama</option></select></div>
             <div><label for="provider-label">来源名称</label><input id="provider-label" maxlength="80" placeholder="例如主服务 / 本机"></div>
@@ -143,9 +148,10 @@
             <div><label for="provider-priority">优先级（小值优先）</label><input id="provider-priority" type="number" min="0" max="1000" value="0" required></div>
           </div><p id="provider-error" class="error" role="alert"></p><button id="provider-add" type="submit" class="primary">添加到配置示例</button><button id="provider-clear" type="button">清空示例</button></form>
           <pre id="model-config-preview" tabindex="0" aria-label="服务端模型配置示例">尚未生成配置。已有服务配置不会被这里修改。</pre>
+          <button id="provider-copy" type="button" disabled>复制配置示例</button><p id="provider-copy-status" class="muted" role="status"></p>
           <p class="muted">支持按来源选择，失败后尝试其他模型。生成示例不代表连接已验证；所选模型需支持工具调用。</p>
         </details>
-        <details><summary>企业成员管理</summary><form id="member-form"><label for="member-name">成员账号</label><input id="member-name" required><label for="member-password">初始密码</label><input id="member-password" type="password" minlength="8" required><label for="member-role">角色</label><select id="member-role"><option value="operator">操作员</option><option value="viewer">只读成员</option></select><button class="primary">创建成员</button></form></details></section>
+        <details><summary>企业成员管理</summary><form id="member-form"><p class="muted">操作员可处理任务；只读成员不能修改资产。成员仍只访问自己的私有资源。</p><label for="member-name">成员账号</label><input id="member-name" required maxlength="128" autocomplete="off" aria-describedby="member-error"><label for="member-password">初始密码</label><input id="member-password" type="password" minlength="8" maxlength="1024" autocomplete="new-password" required aria-describedby="member-error"><label for="member-role">角色</label><select id="member-role"><option value="operator">操作员</option><option value="viewer">只读成员</option></select><p id="member-error" class="error" role="alert" tabindex="-1"></p><button class="primary">创建成员</button></form></details></section>
       <p id="notice" class="notice" role="status" aria-live="polite"></p>
     </main>
     <aside id="inspector" class="inspector" aria-label="任务审查"><div class="inspector-heading"><span class="eyebrow">任务审查</span><h3>运行与证据</h3></div>
