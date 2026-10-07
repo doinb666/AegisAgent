@@ -8,11 +8,17 @@ from contextlib import asynccontextmanager
 
 from sqlalchemy import select, update
 
-from .context import bounded_messages
-from .errors import HarnessError, Principal
+from .context import PLAN_PROMPT, bounded_messages, collaboration_instructions
+from .errors import DocumentContextBudgetError, HarnessError, Principal
 from .models import Asset, Run, ToolCall, User
 from .security import canonical, digest
 from .store import TERMINAL_STATUSES, scope, uid
+from .task_inputs import (
+    DOCUMENT_SNAPSHOT_PREFIX,
+    REFERENCE_FIELDS,
+    fit_document_snapshots,
+    snapshot_message,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -115,6 +121,12 @@ class Worker:
         async with self.active_transaction(run_id) as (session, run):
             values = {"messages": messages, "step": step}
             if config is not None:
+                if run.config.get("document_context_prepared"):
+                    config = {
+                        **config,
+                        "document_context_prepared": True,
+                        "document_references": run.config["document_references"],
+                    }
                 values["config"] = config
             updated = await session.execute(
                 update(Run)
@@ -233,6 +245,7 @@ class Worker:
     async def model_call(self, run, messages, tools=None):
         if self.service.model_router is None:
             raise HarnessError(503, "模型未配置；请配置有效模型凭证")
+        await self.prepare_document_context(run, messages)
         kwargs = {"tools": tools, "tool_choice": "auto"} if tools else {}
         return await asyncio.wait_for(
             self.service.model_router.chat(
@@ -242,6 +255,58 @@ class Worker:
             ),
             timeout=self.service.settings.model_timeout_seconds,
         )
+
+    async def prepare_document_context(self, run, messages):
+        """首次任务调用按动态消息复核；独立风险审查没有快照，继续保持隔离。"""
+        if not run.config.get("document_references"):
+            return
+        index = next(
+            (
+                position
+                for position, message in enumerate(messages)
+                if message.get("role") == "user"
+                and str(message.get("content", "")).startswith(DOCUMENT_SNAPSHOT_PREFIX)
+                and position + 1 < len(messages)
+                and messages[position + 1] == {"role": "user", "content": run.message}
+            ),
+            None,
+        )
+        if index is None:
+            return
+        async with self.active_transaction(run.id) as (_, current):
+            if current.config.get("document_context_prepared"):
+                return
+            snapshots = json.loads(messages[index]["content"][len(DOCUMENT_SNAPSHOT_PREFIX) :])
+            try:
+                fitted = fit_document_snapshots(
+                    messages[:index],
+                    snapshots,
+                    run.message,
+                    self.service.settings.context_chars,
+                    "react",
+                    None,
+                    tail=messages[index + 2 :],
+                )
+            except DocumentContextBudgetError as exc:
+                raise DocumentContextBudgetError(
+                    422,
+                    "首次任务模型调用的上下文预算不足，无法容纳有效资料预览；"
+                    "已有审批工具可能已完成，请核对记录后缩短任务、减少资料或提高预算重试",
+                ) from exc
+            replacement = snapshot_message(fitted)
+            # 只替换既有快照，计划调用临时追加的提示不能写回原始消息。
+            messages[index].update(replacement)
+            current.messages = [
+                replacement if position == index else message
+                for position, message in enumerate(current.messages)
+            ]
+            current.config = {
+                **current.config,
+                "document_context_prepared": True,
+                "document_references": [
+                    {key: snapshot[key] for key in REFERENCE_FIELDS} for snapshot in fitted
+                ],
+            }
 
     async def execute(self, run_id):
         run = await self.load(run_id)
@@ -283,10 +348,7 @@ class Worker:
             messages[0] = {
                 **messages[0],
                 "content": messages[0]["content"]
-                + "协作默认方式为"
-                + config["collaboration_mode"]
-                + "。可按任务通过delegate选择合法方式；只读子任务最多两个。"
-                "需要先后执行时用节点id与depends_on；声明required_tools作为独立工具证据验收。",
+                + collaboration_instructions(config["collaboration_mode"]),
             }
             config["collaboration_initialized"] = True
             await self.checkpoint(
@@ -351,9 +413,7 @@ class Worker:
                         + [
                             {
                                 "role": "user",
-                                "content": (
-                                    '仅输出JSON计划，格式为{"steps":["步骤"]}，此阶段禁止工具调用。'
-                                ),
+                                "content": PLAN_PROMPT,
                             }
                         ],
                     )
@@ -362,6 +422,8 @@ class Worker:
                         raise ValueError("计划格式无效")
                     messages.append({"role": "assistant", "content": "计划：" + canonical(plan)})
                     await self.checkpoint(run.id, messages, step, "plan", plan, config)
+                except DocumentContextBudgetError:
+                    raise
                 except Exception as exc:
                     await self.checkpoint(
                         run.id, messages, step, "plan_fallback", {"reason": str(exc)[:500]}, config

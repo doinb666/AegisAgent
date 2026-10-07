@@ -45,6 +45,7 @@ def run_dict(run):
         "collaboration_mode": run.config.get("collaboration_mode"),
         "project_mode": run.config.get("project_mode"),
         "thread_id": run.config.get("thread_id"),
+        "document_references": run.config.get("document_references", []),
     }
 
 

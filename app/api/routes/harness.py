@@ -8,11 +8,12 @@ from typing import Literal
 
 from fastapi import APIRouter, Depends, File, Header, HTTPException, Query, Request, UploadFile
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from app.etl.isolated import parse_isolated
 from app.harness.errors import HarnessError
 from app.harness.schedules import SCHEDULE_TOOLS
+from app.harness.task_inputs import validate_document_ids
 
 router = APIRouter(tags=["AegisCode"])
 TERMINAL = {"completed", "failed", "cancelled", "interrupted"}
@@ -47,6 +48,15 @@ class RunInput(BaseModel):
     model: str | None = Field(default=None, max_length=128)
     collaboration_mode: Literal["fork", "team"] | None = None
     project_mode: Literal["fork", "worktree"] | None = None
+    document_ids: list[str] | None = Field(default=None, max_length=3)
+
+    @field_validator("document_ids", mode="before")
+    @classmethod
+    def documents(cls, value):
+        try:
+            return validate_document_ids(value)
+        except HarnessError as exc:
+            raise ValueError(exc.detail) from exc
 
 
 class ApprovalInput(BaseModel):
@@ -143,6 +153,7 @@ async def capabilities(request: Request, principal=Depends(identity)):
         "max_steps": harness.settings.max_steps,
         "threads": {"enabled": harness.store.threads_ready},
         "notifications": {"enabled": harness.store.notifications_ready},
+        "task_inputs": {"enabled": True, "max_documents": 3},
         "schedules": {
             "enabled": harness.store.schedules_ready,
             "max_active": 100,

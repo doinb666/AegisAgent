@@ -10,6 +10,10 @@ class HarnessError(Exception):
         self.detail = detail
 
 
+class DocumentContextBudgetError(HarnessError):
+    """资料首次任务上下文不足；禁止当作普通计划失败静默降级。"""
+
+
 @dataclass(frozen=True)
 class Principal:
     user_id: str

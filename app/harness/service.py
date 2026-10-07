@@ -19,6 +19,14 @@ from .notifications import NotificationService
 from .schedules import ScheduleService
 from .security import canonical, digest, password_hash, password_matches
 from .store import Store, run_dict, scope, uid
+from .task_inputs import (
+    DOCUMENT_SNAPSHOT_PREFIX,
+    REFERENCE_FIELDS,
+    TaskInputService,
+    fit_document_snapshots,
+    snapshot_message,
+    validate_document_ids,
+)
 from .threads import ThreadService
 
 ACTIVE_STATUSES = ("queued", "running", "waiting_approval")
@@ -39,6 +47,7 @@ class HarnessService(AssetService):
         self.threads = ThreadService(self.store)
         self.notifications = NotificationService(self.store)
         self.schedules = ScheduleService(self)
+        self.task_inputs = TaskInputService(self)
         self.wakeup = asyncio.Event()
         self.closing = False
 
@@ -169,6 +178,7 @@ class HarnessService(AssetService):
         collaboration_mode=None,
         project_mode=None,
         thread_id=None,
+        document_ids=None,
         _schedule_gate=None,
     ):
         if not message.strip() or not idempotency_key or len(idempotency_key) > 256:
@@ -194,6 +204,9 @@ class HarnessService(AssetService):
             raise HarnessError(422, "会话标识无效")
         if thread_id is not None and parent_run_id:
             raise HarnessError(403, "子任务不能指定主会话")
+        document_ids = validate_document_ids(document_ids)
+        if document_ids and (parent_run_id or _schedule_gate is not None):
+            raise HarnessError(403, "子任务和定时任务不能携带显式资料")
         payload = dict(
             message=message,
             session_id=session_id,
@@ -210,6 +223,8 @@ class HarnessService(AssetService):
             payload["project_mode"] = project_mode
         if thread_id is not None:
             payload["thread_id"] = thread_id
+        if document_ids:
+            payload["document_ids"] = document_ids
         payload_hash = digest(canonical(payload))
         async with self.store.write_lock:
             try:
@@ -236,6 +251,9 @@ class HarnessService(AssetService):
                         principal, allowed_tools, schedule_id = await self.schedules.gate(
                             session, principal, _schedule_gate
                         )
+                    document_snapshots = await self.task_inputs.document_snapshots(
+                        session, principal, document_ids
+                    )
                     if parent_run_id:
                         parent = await self.store.owned(session, Run, parent_run_id, principal)
                         parent_locked = await session.execute(
@@ -357,7 +375,12 @@ class HarnessService(AssetService):
                                 "content": str(item.get("content", ""))[:1200],
                             }
                             for item in parent.messages[-8:]
-                            if item.get("content") and item.get("role") != "system"
+                            if item.get("content")
+                            and item.get("role") != "system"
+                            and not (
+                                parent.config.get("document_references")
+                                and str(item["content"]).startswith(DOCUMENT_SNAPSHOT_PREFIX)
+                            )
                         ]
                         messages.append(
                             {
@@ -417,6 +440,16 @@ class HarnessService(AssetService):
                                 "content": "不可信记忆候选，仅作参考：" + canonical(memories),
                             }
                         )
+                    if document_snapshots:
+                        document_snapshots = fit_document_snapshots(
+                            messages,
+                            document_snapshots,
+                            message,
+                            self.settings.context_chars,
+                            mode,
+                            collaboration_mode,
+                        )
+                        messages.append(snapshot_message(document_snapshots))
                     messages.append({"role": "user", "content": message})
                     if _schedule_gate is not None:
                         await self.schedules.require_lease(session, _schedule_gate)
@@ -441,6 +474,16 @@ class HarnessService(AssetService):
                             "project_mode": project_mode,
                             "thread_id": thread.id if thread else None,
                             **({"schedule_id": schedule_id} if schedule_id else {}),
+                            **(
+                                {
+                                    "document_references": [
+                                        {key: snapshot[key] for key in REFERENCE_FIELDS}
+                                        for snapshot in document_snapshots
+                                    ]
+                                }
+                                if document_snapshots
+                                else {}
+                            ),
                         },
                         messages=messages,
                         created=time.time(),
