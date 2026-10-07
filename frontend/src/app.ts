@@ -10,6 +10,7 @@ import { initializeAssetBrowser } from "./asset-browser";
 import { initializeSchedules } from "./schedules";
 import { initializeTaskInputs } from "./task-inputs";
 import { initializeModelParameters } from "./model-parameters";
+import { initializeModelOutput } from "./model-output";
 
 const $ = (id: string): any => document.getElementById(id);
 const apiRoot = "/api/v1";
@@ -33,6 +34,7 @@ const taskInputs = initializeTaskInputs({api, identity: () => state.token, messa
   },
 });
 const modelParameters = initializeModelParameters(() => $("model").value);
+const modelOutput = initializeModelOutput($("conversation"));
 const projectThreads = initializeProjectThreads({
   api, identity: () => state.token, canWrite, select: selectThread, notice,
   changed: thread => {
@@ -228,16 +230,20 @@ async function refreshRuns(more=false) {
 function message(role,text) {
   $("conversation").append(createMessage(role,text));
 }
+function renderRunMeta(run) {
+  const route=state.modelRoutes.find(item=>item.id===run.model);
+  const collaboration = run.collaboration_mode === "fork" ? "继承背景（Fork）" : "独立分析（Team）";
+  const projectMode = {fork:"仓库副本（Fork）",worktree:"独立 Git 工作区（Worktree）"}[run.project_mode] || "未选择";
+  $("run-meta").textContent=`步骤 ${run.step || 0}\nTrace ${run.trace_id}\n模型 ${route?.label || run.model || "自动选择"}\n协作方式 ${collaboration}\n代码目录 ${projectMode}`;
+}
 function renderRun(run) {
+  modelOutput.settle(run.status);
   taskInputs.showRun(run);
   state.run=run; state.session=run.session_id;
   state.threadId=run.thread_id || null;
   $("run-status").textContent=statuses[run.status] || run.status;
   $("run-status").dataset.status=run.status;
-  const route=state.modelRoutes.find(item=>item.id===run.model);
-  const collaboration = run.collaboration_mode === "fork" ? "继承背景（Fork）" : "独立分析（Team）";
-  const projectMode = {fork:"仓库副本（Fork）",worktree:"独立 Git 工作区（Worktree）"}[run.project_mode] || "未选择";
-  $("run-meta").textContent=`步骤 ${run.step || 0}\nTrace ${run.trace_id}\n模型 ${route?.label || run.model || "自动选择"}\n协作方式 ${collaboration}\n代码目录 ${projectMode}`;
+  renderRunMeta(run);
   $("cancel").hidden=!canWrite() || !['queued','running','waiting_approval'].includes(run.status);
   $("feedback").hidden=!canWrite() || !['completed','failed'].includes(run.status);
   $("approval").hidden=run.status!=="waiting_approval";
@@ -249,6 +255,7 @@ function renderRun(run) {
   $("conversation").scrollTop=$("conversation").scrollHeight;
 }
 async function openRun(id) {
+  modelOutput.clear();
   taskInputs.showRun(null);
   taskInputs.resetSelection();
   state.generation++; state.stream?.abort(); state.cursor=0; $("timeline").replaceChildren();
@@ -285,6 +292,26 @@ async function openRun(id) {
 }
 function addEvent(id,type,data) {
   if(id<=state.cursor) return; state.cursor=id;
+  if(['completed','failed','cancelled','interrupted'].includes(type)) {
+    modelOutput.settle(type);
+    if(state.run && ['queued','running','waiting_approval'].includes(state.run.status)) {
+      state.run.status=type;
+      $("run-status").textContent=statuses[type];$("run-status").dataset.status=type;
+      $("cancel").hidden=true;$("approval").hidden=true;
+    }
+  }
+  if(type==="running" && state.run?.status==="queued") {
+    state.run.status="running";
+    $("run-status").textContent=statuses.running;$("run-status").dataset.status="running";
+  }
+  if(type.startsWith("model_output_")) {
+    if(type==="model_output_started" && ['queued','running'].includes(state.run?.status)
+      && Number.isSafeInteger(data.step) && data.step > (state.run.step || 0)) {
+      state.run.step=data.step;renderRunMeta(state.run);
+    }
+    modelOutput.accept(type,data,['queued','running'].includes(state.run?.status));
+    if(type==="model_output_delta")return;
+  }
   $("timeline").append(WorkspaceUI.eventRow(id,type,data,statuses));
   WorkspaceUI.renderCollaboration(type,data,childId=>guard(()=>openRun(childId)));
 }
@@ -312,20 +339,22 @@ async function watch(id,generation,token) {
     }
     if(!valid()) return;
     const run=await api(`/runs/${id}`);if(!valid())return;
-    const changed=state.run.status!==run.status;
     renderRun(run);
-    if(changed && !['queued','running'].includes(run.status))loadRunFiles();
+    if(!['queued','running'].includes(run.status))loadRunFiles();
     await refreshRuns();if(!valid())return;
     await refreshOverview();if(!valid())return;
     void notifications.refresh();
     if(['queued','running'].includes(run.status)) setTimeout(()=>watch(id,generation,token),500);
   } catch(error) {
     if(error.name==="AbortError" || !valid()) return;
-    $("connection").textContent="正在重连"; notice("连接中断，任务仍在后台运行，正在恢复事件。");
+    $("connection").textContent="正在重连";
+    notice(['completed','failed','cancelled','interrupted'].includes(state.run?.status)
+      ? "任务已结束，结果详情暂不可用，正在重新读取。" : "连接中断，任务仍在后台运行，正在恢复事件。");
     setTimeout(()=>{if(valid()) watch(id,generation,token);},1500);
   }
 }
 function newTask() {
+  modelOutput.clear();
   modelParameters.reset();
   taskInputs.resetSelection(); taskInputs.showRun(null);
   state.threadId=null;projectThreads.show(null);
@@ -395,7 +424,7 @@ async function showView(view) {
   if(view==="chat" && state.view==="chat")return;
   if(view==="chat" && state.view!=="chat" && state.run)return openRun(state.run.id);
   state.view=view;state.viewGeneration++;state.assetsGeneration++;
-  if(view!=="chat"){state.generation++;state.stream?.abort();WorkspaceUI.clearFiles();setRunLoading(false);}
+  if(view!=="chat"){modelOutput.clear();state.generation++;state.stream?.abort();WorkspaceUI.clearFiles();setRunLoading(false);}
   const titles: Record<string, string>={chat:"任务空间",projects:"项目",memories:"长期记忆",skills:"技能库",documents:"知识库",schedules:"定时任务",templates:"任务模板",settings:"能力与设置"};
   $("view-title").textContent=titles[view]; $("location").textContent=titles[view];
   $("chat-view").hidden=view!=="chat"; $("settings-view").hidden=view!=="settings";

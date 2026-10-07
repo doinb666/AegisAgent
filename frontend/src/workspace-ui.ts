@@ -118,7 +118,8 @@ const WorkspaceUI = (() => {
   }
   function eventRow(id, type, data, statuses) {
     const names = {queued: "任务已排队", running: "任务开始推进", assets_recalled: "召回本人记忆与能力", bootstrap: "加载任务上下文", model: "收到模型响应", model_usage: "记录模型参数与用量", model_request: "请求模型", model_response: "收到模型响应", tool_started: "开始工具调用", tool_call: "准备工具调用", tool_result: "收到工具结果", risk_review: "记录独立风险审查", reflection: "记录回答复核", waiting_approval: "请求审批", approval: "记录审批决定", feedback: "记录任务反馈", plan: "生成执行计划", plan_fallback: "规划失败，记录回退原因", checkpoint: "保存执行进度"};
-    const caption = names[type] || statuses[type] || "保存任务事件";
+    const outputNames = {model_output_started: "开始公开输出", model_output_retracted: "撤销临时输出", model_output_finished: "公开输出已收齐"};
+    const caption = outputNames[type] || names[type] || statuses[type] || "保存任务事件";
     let description = caption;
     if (data.name) description += `：${data.name}`;
     if (type === "approval") description += data.approved ? "，已批准" : "，已拒绝";
