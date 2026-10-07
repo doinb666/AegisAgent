@@ -20,6 +20,7 @@ def main():
         "scripts.project_threads_browser_acceptance",
         "scripts.workbench_browser_acceptance",
         "scripts.notifications_browser_acceptance",
+        "scripts.layout_browser_acceptance",
     }
     if not set(args.module) <= allowed:
         parser.error("请选择已登记的验收模块")

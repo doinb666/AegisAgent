@@ -92,9 +92,13 @@ function resetLogin() {
   $("account").textContent="";
   sessionStorage.removeItem("aegis-pending-request"); sessionStorage.removeItem("aegis-last-run");
   sessionStorage.removeItem("aegis-token"); $("shell").hidden=true; $("auth").hidden=false;
+  $("auth-theme-slot").append($("theme-toggle"));
+  $("workspace-summary").open=false;
+  $("sidebar-history").click();
 }
 async function enter(user) {
   state.user=user; $("auth").hidden=true; $("shell").hidden=false;
+  $("workspace-theme-slot").append($("theme-toggle"));
   const token=state.token;
   const valid=contextCurrent();
   $("account").textContent=`${user.username || "我的账号"} · ${{admin:"管理员",operator:"操作员",viewer:"只读成员"}[user.role] || user.role}`;
@@ -189,7 +193,9 @@ function renderRun(run) {
   $("run-status").textContent=statuses[run.status] || run.status;
   $("run-status").dataset.status=run.status;
   const route=state.modelRoutes.find(item=>item.id===run.model);
-  $("run-meta").textContent=`步骤 ${run.step || 0}\nTrace ${run.trace_id}\n模型 ${route?.label || run.model || "自动选择"}\n协作默认 ${run.collaboration_mode || "team"}\n代码目录 ${run.project_mode || "未选择"}`;
+  const collaboration = run.collaboration_mode === "fork" ? "继承背景（Fork）" : "独立分析（Team）";
+  const projectMode = {fork:"仓库副本（Fork）",worktree:"独立 Git 工作区（Worktree）"}[run.project_mode] || "未选择";
+  $("run-meta").textContent=`步骤 ${run.step || 0}\nTrace ${run.trace_id}\n模型 ${route?.label || run.model || "自动选择"}\n协作方式 ${collaboration}\n代码目录 ${projectMode}`;
   $("cancel").hidden=!canWrite() || !['queued','running','waiting_approval'].includes(run.status);
   $("feedback").hidden=!canWrite() || !['completed','failed'].includes(run.status);
   $("approval").hidden=run.status!=="waiting_approval";
@@ -342,22 +348,36 @@ async function showView(view) {
   if(view==="chat" && state.view!=="chat" && state.run)return openRun(state.run.id);
   state.view=view;state.viewGeneration++;state.assetsGeneration++;
   if(view!=="chat"){state.generation++;state.stream?.abort();WorkspaceUI.clearFiles();setRunLoading(false);}
-  const titles: Record<string, string>={chat:"任务空间",projects:"项目",memories:"长期记忆",skills:"Skills",documents:"知识库",settings:"能力与设置"};
+  const titles: Record<string, string>={chat:"任务空间",projects:"项目",memories:"长期记忆",skills:"技能库",documents:"知识库",settings:"能力与设置"};
   $("view-title").textContent=titles[view]; $("location").textContent=titles[view];
   $("chat-view").hidden=view!=="chat"; $("settings-view").hidden=view!=="settings";
   $("assets-view").hidden=['chat','settings'].includes(view);
-  document.querySelectorAll<HTMLElement>("[data-view]").forEach(b=>b.classList.toggle("selected",b.dataset.view===view));
+  document.querySelectorAll<HTMLElement>("[data-view]").forEach(button => {
+    const current = button.dataset.view === view;
+    button.classList.toggle("selected", current);
+    if (current) button.setAttribute("aria-current", "page");
+    else button.removeAttribute("aria-current");
+  });
   if(!['chat','settings'].includes(view)) {
     $("asset-form").hidden=true; $("upload-form").hidden=view!=="documents" || !canWrite(); $("add-asset").hidden=view==="documents" || !canWrite();
     $("skill-controls").hidden=view!=="skills";
     closeSkillImport();
     $("import-skill").disabled=!canWrite();
-    $("assets-description").textContent={memories:"偏好与约束跨会话保留。候选需要你确认，退役内容不再进入任务。",skills:"从执行经验中提炼的能力。检查适用边界与来源，再启用或修订。",documents:"上传资料供本账号检索。支持文本型 PDF、Markdown 与 TXT。",projects:"保存项目目标与边界。选择项目后，新任务在同一线程连续推进。"}[view];
+    $("assets-description").textContent={memories:"保存你的偏好、约束和任务经验，后续会话可按需使用。候选需确认，退役后不再召回。",skills:"把任务经验变成可复用的操作方法。先检查来源、适用边界和验证步骤，再启用或修订。",documents:"上传私有资料，让回答有据可查。支持文本型 PDF、Markdown 与 TXT。",projects:"保存项目目标与边界。同一项目可创建多个独立会话，项目本身不会授予文件访问权限。"}[view];
     await loadAssets();
   }
 }
 document.querySelectorAll<HTMLElement>("[data-view]").forEach(b=>b.onclick=()=>guard(()=>showView(b.dataset.view)));
 const navigation = initializeNavigation(() => Boolean(state.user), newTask, view => guard(() => showView(view)));
+function updateModeHint(): void {
+  const hints: Record<string, string> = {
+    react: "直接执行：边处理边调用工具，适合明确的小任务。",
+    plan: "先规划：先拆解步骤再执行，适合需要多步处理的目标。",
+    reflection: "审查回答：核对回答质量与潜在问题。",
+  };
+  $("mode-hint").textContent = hints[$("mode").value] || hints.react;
+}
+$("mode").addEventListener("change", updateModeHint);
 async function loadAssets() {
   const token=state.token,view=state.view,generation=++state.assetsGeneration;
   const valid=()=>token===state.token && view===state.view && generation===state.assetsGeneration;

@@ -20,8 +20,10 @@
     <symbol id="icon-book" viewBox="0 0 24 24"><path d="M12 5c-3-2-6-2-9-1v15c3-1 6-1 9 1 3-2 6-2 9-1V4c-3-1-6-1-9 1Zm0 0v15"/></symbol>
     <symbol id="icon-settings" viewBox="0 0 24 24"><path d="M5 4v16M12 4v16M19 4v16M2 8h6M9 16h6M16 10h6"/></symbol>
     <symbol id="icon-bell" viewBox="0 0 24 24"><path d="M6 10a6 6 0 0 1 12 0v5l2 3H4l2-3Zm4 11h4M12 2v2"/></symbol>
+    <symbol id="icon-shield" viewBox="0 0 24 24"><path d="m12 3 8 3v6c0 4-4 7-8 9-4-2-8-5-8-9V6Z"/><path d="m8 12 3 3 5-6"/></symbol>
+    <symbol id="icon-search" viewBox="0 0 24 24"><circle cx="10" cy="10" r="6"/><path d="m15 15 6 6"/></symbol>
   </defs></svg>
-  <button id="theme-toggle" class="theme-toggle" type="button" aria-label="切换为浅色主题"><svg class="icon" aria-hidden="true"><use href="#icon-theme"/></svg><span id="theme-label">浅色主题</span></button>
+  <div id="auth-theme-slot"><button id="theme-toggle" class="theme-toggle" type="button" aria-label="切换为浅色主题"><svg class="icon" aria-hidden="true"><use href="#icon-theme"/></svg><span id="theme-label">浅色主题</span></button></div>
   <div id="auth" class="auth-screen">
     <div class="auth-intro"><span class="wordmark">AegisCode<span class="brand-dot"></span></span>
       <h1>任务有进度，<br>经验有归处。</h1><p>问答、代码与知识工作，在一个可审查的空间持续推进。</p>
@@ -37,16 +39,19 @@
   </div>
   <div id="shell" class="shell" hidden>
     <aside id="workspace-sidebar" class="sidebar" aria-label="工作台导航与任务记录">
-      <a class="wordmark" href="/">AegisCode<span class="brand-dot"></span></a>
+      <div class="sidebar-brand"><a class="wordmark" href="/"><svg class="brand-symbol icon" aria-hidden="true"><use href="#icon-shield"/></svg>AegisCode<span class="brand-dot"></span></a><span class="workspace-label">私有工作空间</span></div>
       <button id="new-task" class="new-task"><span><svg class="icon" aria-hidden="true"><use href="#icon-plus"/></svg>新任务</span><kbd>Alt N</kbd></button>
       <nav aria-label="工作台导航">
-        <button data-view="chat" class="nav-button selected"><svg class="icon" aria-hidden="true"><use href="#icon-chat"/></svg>任务空间</button>
-        <button data-view="projects" class="nav-button"><svg class="icon" aria-hidden="true"><use href="#icon-folder"/></svg>项目</button>
-        <button data-view="memories" class="nav-button"><svg class="icon" aria-hidden="true"><use href="#icon-memory"/></svg>长期记忆</button>
-        <button data-view="skills" class="nav-button"><svg class="icon" aria-hidden="true"><use href="#icon-skill"/></svg>Skills</button>
-        <button data-view="documents" class="nav-button"><svg class="icon" aria-hidden="true"><use href="#icon-book"/></svg>知识库</button>
-        <button data-view="settings" class="nav-button"><svg class="icon" aria-hidden="true"><use href="#icon-settings"/></svg>能力与设置</button>
+        <button data-view="chat" class="nav-button selected" title="提问、执行任务与查看结果" aria-current="page"><svg class="icon" aria-hidden="true"><use href="#icon-chat"/></svg>任务空间</button>
+        <button data-view="projects" class="nav-button" title="管理项目目标与约束"><svg class="icon" aria-hidden="true"><use href="#icon-folder"/></svg>项目</button>
+        <button data-view="memories" class="nav-button" title="管理自己的偏好、约束与长期经验"><svg class="icon" aria-hidden="true"><use href="#icon-memory"/></svg>长期记忆</button>
+        <button data-view="skills" class="nav-button" title="审阅、启用和复用任务经验"><svg class="icon" aria-hidden="true"><use href="#icon-skill"/></svg>技能库</button>
+        <button data-view="documents" class="nav-button" title="上传资料，供本人任务检索"><svg class="icon" aria-hidden="true"><use href="#icon-book"/></svg>知识库</button>
+        <button data-view="settings" class="nav-button" title="查看服务能力、模型接入与成员管理"><svg class="icon" aria-hidden="true"><use href="#icon-settings"/></svg>能力与设置</button>
       </nav>
+      <div class="sidebar-switch" aria-label="选择记录类型"><button id="sidebar-projects" type="button" aria-pressed="false" aria-controls="sidebar-project-panel">项目会话</button><button id="sidebar-history" type="button" aria-pressed="true" aria-controls="run-navigation">任务历史</button></div>
+      <div class="sidebar-scroll">
+      <div id="sidebar-project-panel" hidden><p id="threads-unavailable" class="empty">正在读取项目会话能力…</p>
       <section id="project-thread-navigation" class="project-thread-navigation" aria-label="项目与会话" hidden>
         <div class="section-caption"><span>项目与会话</span><button id="threads-refresh" type="button" aria-label="刷新项目与会话"><svg class="icon" aria-hidden="true"><use href="#icon-refresh"/></svg></button></div>
         <div id="project-thread-list" class="project-thread-list"></div>
@@ -54,16 +59,18 @@
         <div class="thread-list-caption"><span id="threads-caption">最近会话</span><button id="threads-archive-toggle" type="button">查看归档</button></div>
         <div id="recent-thread-list"></div><button id="threads-more" type="button" hidden>加载更多会话</button>
         <p id="threads-status" class="muted" role="status"></p>
-      </section>
+      </section></div>
+      <section id="run-navigation" aria-label="任务历史">
       <div class="section-caption">任务记录 <button id="refresh" aria-label="刷新任务"><svg class="icon" aria-hidden="true"><use href="#icon-refresh"/></svg></button></div>
       <div class="run-controls"><label for="run-search" class="sr-only">搜索任务</label><input id="run-search" type="search" maxlength="200" placeholder="搜索任务内容…"><label for="run-filter" class="sr-only">筛选任务状态</label><select id="run-filter"><option value="">全部状态</option><option value="queued">等待执行</option><option value="running">正在推进</option><option value="waiting_approval">等待审批</option><option value="completed">任务完成</option><option value="failed">执行失败</option><option value="cancelled">已停止</option><option value="interrupted">需要核对</option></select></div>
       <div id="run-list" class="run-list" aria-live="polite"></div>
-      <button id="runs-more" class="runs-more" hidden>加载更多任务</button>
-      <div class="sidebar-footer"><div id="account" class="account"></div><button id="logout">退出登录</button></div>
+      <button id="runs-more" class="runs-more" hidden>加载更多任务</button></section></div>
+      <div class="sidebar-footer"><svg class="account-symbol icon" aria-hidden="true"><use href="#icon-shield"/></svg><div id="account" class="account"></div><button id="logout">退出登录</button></div>
     </aside>
     <main class="main">
-      <header class="topbar"><button id="sidebar-toggle" class="icon-button" type="button" aria-label="折叠导航" aria-expanded="true" aria-controls="workspace-sidebar"><svg class="icon" aria-hidden="true"><use href="#icon-panel"/></svg></button><div class="topbar-context"><span class="eyebrow">工作空间 / <span id="location">任务</span></span><h2 id="view-title">任务空间</h2><div id="memory-preview" class="memory-preview"></div><p id="workspace-overview" class="workspace-overview">正在读取本人任务与资产…</p></div>
-        <div class="topbar-actions"><button id="notifications-toggle" type="button" aria-label="站内通知" aria-expanded="false" aria-controls="notifications-panel" hidden><svg class="icon" aria-hidden="true"><use href="#icon-bell"/></svg><span id="notifications-count" hidden></span></button><button id="command-toggle" class="command-toggle" type="button" aria-label="快捷跳转，Ctrl K" aria-expanded="false" aria-controls="quick-actions">跳转 <kbd>Ctrl K</kbd></button><span id="connection" class="status-tag">尚未连接任务</span><button id="inspector-toggle" class="icon-button" aria-label="折叠审查区" aria-expanded="true" aria-controls="inspector"><svg class="icon" aria-hidden="true"><use href="#icon-panel"/></svg></button></div></header>
+      <header class="topbar"><button id="sidebar-toggle" class="icon-button" type="button" aria-label="折叠导航" aria-expanded="true" aria-controls="workspace-sidebar"><svg class="icon" aria-hidden="true"><use href="#icon-panel"/></svg></button><div class="topbar-context"><span class="eyebrow">工作空间 / <span id="location">任务</span></span><h2 id="view-title">任务空间</h2></div>
+        <div class="topbar-actions"><span id="connection" class="status-tag">尚未连接任务</span><button id="command-toggle" class="command-toggle" type="button" aria-label="快捷跳转，Ctrl K" aria-expanded="false" aria-controls="quick-actions" title="搜索功能入口（Ctrl K）"><svg class="icon" aria-hidden="true"><use href="#icon-search"/></svg><span>跳转</span><kbd>Ctrl K</kbd></button><button id="notifications-toggle" type="button" aria-label="站内通知" aria-expanded="false" aria-controls="notifications-panel" title="查看自己的任务完成、失败和审批提醒" hidden><svg class="icon" aria-hidden="true"><use href="#icon-bell"/></svg><span id="notifications-count" hidden></span></button><div id="workspace-theme-slot"></div><button id="inspector-toggle" class="icon-button" aria-label="折叠审查区" aria-expanded="true" aria-controls="inspector" title="查看任务状态、审批与工具证据"><svg class="icon" aria-hidden="true"><use href="#icon-panel"/></svg></button></div></header>
+      <details id="workspace-summary" class="workspace-summary"><summary><svg class="icon" aria-hidden="true"><use href="#icon-memory"/></svg>记忆与空间概览</summary><div><p id="memory-preview" class="memory-preview"></p><p id="workspace-overview" class="workspace-overview">正在读取本人任务与资产…</p></div></details>
       <section id="quick-actions" class="quick-actions" aria-labelledby="commands-heading" hidden>
         <div class="quick-heading"><h3 id="commands-heading">快速到达</h3><button id="command-close" type="button" aria-label="关闭快捷跳转">关闭 <kbd>Esc</kbd></button></div>
         <label class="sr-only" for="command-query">搜索工作台入口</label><input id="command-query" type="search" maxlength="100" placeholder="任务、记忆、Skills 或设置…" autocomplete="off">
@@ -76,29 +83,30 @@
       </section>
       <section id="chat-view" class="view chat-view">
         <div id="conversation" class="conversation" aria-live="polite">
-          <div id="welcome" class="welcome"><svg class="welcome-symbol icon" aria-hidden="true"><use href="#icon-chat"/></svg><h1>我们今天做些什么？</h1>
+          <div id="welcome" class="welcome"><svg class="welcome-symbol icon" aria-hidden="true"><use href="#icon-shield"/></svg><span class="welcome-caption">你的目标，我们一起推进</span><h1>我们今天做些什么？</h1>
             <p>描述目标与约束。需要写文件或运行代码时，我会先请求审批。</p>
-            <div class="suggestions"><button data-prompt="根据我的知识库回答问题，并列出来源和不足。">从资料中找答案 <svg class="icon" aria-hidden="true"><use href="#icon-arrow"/></svg></button>
-              <button data-prompt="帮我审查代码。先列出所需文件与检查计划，再执行只读分析。">审查代码与边界 <svg class="icon" aria-hidden="true"><use href="#icon-arrow"/></svg></button>
-              <button data-prompt="我希望你记住：回答使用中文，先给结论，未经确认不要修改文件。">建立我的协作偏好 <svg class="icon" aria-hidden="true"><use href="#icon-arrow"/></svg></button></div>
+            <div class="suggestions"><button data-prompt="根据我的知识库回答问题，并列出来源和不足。"><svg class="icon" aria-hidden="true"><use href="#icon-book"/></svg><strong>从资料中找答案</strong><span>引用来源，核对依据</span><svg class="suggestion-arrow icon" aria-hidden="true"><use href="#icon-arrow"/></svg></button>
+              <button data-prompt="帮我审查代码。先列出所需文件与检查计划，再执行只读分析。"><svg class="icon" aria-hidden="true"><use href="#icon-folder"/></svg><strong>审查代码与边界</strong><span>拆解问题，验证风险</span><svg class="suggestion-arrow icon" aria-hidden="true"><use href="#icon-arrow"/></svg></button>
+              <button data-prompt="我希望你记住：回答使用中文，先给结论，未经确认不要修改文件。"><svg class="icon" aria-hidden="true"><use href="#icon-memory"/></svg><strong>建立我的协作偏好</strong><span>记住习惯，持续复用</span><svg class="suggestion-arrow icon" aria-hidden="true"><use href="#icon-arrow"/></svg></button></div>
           </div>
         </div>
-        <section id="thread-context" class="thread-context" aria-label="当前项目与会话" hidden>
+        <div class="composer-dock"><section id="thread-context" class="thread-context" aria-label="当前项目与会话" hidden>
           <div><span id="current-project-label" class="muted"></span><strong id="current-thread-title"></strong><span id="thread-archived-label" class="status-tag" hidden>已归档</span></div>
           <div id="thread-actions"><button id="thread-rename" type="button">重命名</button><button id="thread-archive" type="button">归档会话</button></div>
           <form id="thread-rename-form" hidden><label for="thread-title-input">会话标题</label><input id="thread-title-input" maxlength="200" required><button class="primary" type="submit">保存标题</button><button id="thread-rename-cancel" type="button">取消</button></form>
         </section>
         <form id="composer" class="composer"><label for="message" class="sr-only">描述你的任务</label>
-          <textarea id="message" placeholder="描述任务，或添加需要遵守的约束…" rows="3" maxlength="16000" required></textarea>
+          <textarea id="message" placeholder="描述任务，或添加需要遵守的约束…" rows="2" maxlength="16000" required></textarea>
           <div class="composer-bottom"><div><label for="mode" class="sr-only">执行方式</label><select id="mode"><option value="react">直接执行</option><option value="plan">先规划</option><option value="reflection">审查回答</option></select>
             <label for="model" class="sr-only">模型</label><select id="model"><option value="">自动选择模型</option></select></div>
             <button id="send" class="primary" type="submit">开始任务 <svg class="icon" aria-hidden="true"><use href="#icon-arrow"/></svg></button></div>
-          <p class="composer-hint">Enter 换行 · Ctrl Enter 发送 · Ctrl K 快捷跳转</p>
+          <p class="composer-hint"><svg class="icon" aria-hidden="true"><use href="#icon-shield"/></svg>写入与执行需审批<span>Ctrl Enter 发送</span></p>
+          <p id="mode-hint" class="mode-hint">直接执行：边处理边调用工具，适合明确的小任务。</p>
           <details class="task-options"><summary>代码工作区与协作</summary><div class="task-options-grid">
             <div><label for="collaboration-mode">协作默认方式</label><select id="collaboration-mode"><option value="team">Agent Team · 独立分析</option><option value="fork">Fork · 继承会话背景</option></select></div>
             <div><label for="project-mode">代码准备方式</label><select id="project-mode"><option value="">不准备代码目录</option><option value="fork">Fork · 仓库代码副本</option><option value="worktree">Worktree · 独立 Git 工作区</option></select></div>
           </div><p id="collaboration-hint" class="muted">子任务最多两个，只读且由主控汇总。准备代码目录需批准。</p></details>
-        </form>
+        </form></div>
       </section>
       <section id="assets-view" class="view assets-view" hidden>
         <div class="view-heading"><p id="assets-description"></p><button id="add-asset" class="primary">添加</button></div>

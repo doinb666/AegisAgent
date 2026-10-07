@@ -36,11 +36,19 @@ export function initializeProjectThreads(options: Options) {
     finally { if (button && valid()) button.disabled = false; }
   };
 
+  function markCurrent(button: HTMLElement): void {
+    const active = button.dataset.threadId === selected?.id;
+    button.classList.toggle("current", active);
+    if (active) button.setAttribute("aria-current", "true");
+    else button.removeAttribute("aria-current");
+  }
+
   function show(thread: Thread | null): void {
     selected = thread;
     options.changed(thread);
     element("thread-context").hidden = !thread;
     element("thread-rename-form").hidden = true;
+    document.querySelectorAll<HTMLElement>(".thread-item").forEach(markCurrent);
     if (!thread) return;
     element("current-project-label").textContent = thread.project_name ? `项目 · ${thread.project_name}` : "独立会话";
     element("current-thread-title").textContent = thread.title;
@@ -54,6 +62,7 @@ export function initializeProjectThreads(options: Options) {
     button.type = "button"; button.className = "thread-item";
     button.textContent = thread.title; button.title = thread.title;
     button.dataset.threadId = thread.id;
+    markCurrent(button);
     button.onclick = () => { void perform(() => options.select(thread), button); };
     return button;
   }
@@ -74,10 +83,14 @@ export function initializeProjectThreads(options: Options) {
   }
 
   function renderProjects(): void {
-    const list = element("project-thread-list"); list.replaceChildren();
+    const list = element("project-thread-list");
+    const expanded = new Set(Array.from(list.querySelectorAll<HTMLDetailsElement>("details[open]"))
+      .map(group => group.dataset.projectId));
+    list.replaceChildren();
     if (!projects.length) list.append(text("p", "启用项目后可在这里创建独立会话。", "muted"));
     for (const project of projects) {
       const group = document.createElement("details"); group.className = "project-thread-group";
+      group.dataset.projectId = project.id;
       const heading = document.createElement("summary"); heading.textContent = project.name;
       const items = document.createElement("div"); items.className = "project-thread-items";
       const start = document.createElement("button"); start.type = "button";
@@ -109,6 +122,7 @@ export function initializeProjectThreads(options: Options) {
       more.hidden = true;
       more.onclick = () => { void load(initialized); };
       group.ontoggle = () => { if (group.open && !initialized) void load(false); };
+      group.open = expanded.has(project.id);
     }
   }
 
@@ -187,6 +201,8 @@ export function initializeProjectThreads(options: Options) {
     configure: (capabilities: any): void => {
       generation++; enabled = capabilities.threads?.enabled === true;
       element("project-thread-navigation").hidden = !enabled;
+      element("threads-unavailable").hidden = enabled;
+      element("threads-unavailable").textContent = "当前服务未启用项目会话，请使用任务历史，或联系管理员更新服务。";
       if (enabled) void refresh();
     },
     clear: (): void => {

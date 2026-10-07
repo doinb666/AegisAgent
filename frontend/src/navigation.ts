@@ -25,6 +25,15 @@ export function initializeNavigation(
   const count = element("command-count");
   let previousFocus: HTMLElement | null = null;
 
+  function showSidebarSection(projects: boolean): void {
+    element("sidebar-project-panel").hidden = !projects;
+    element("run-navigation").hidden = projects;
+    element("sidebar-projects").setAttribute("aria-pressed", String(projects));
+    element("sidebar-history").setAttribute("aria-pressed", String(!projects));
+  }
+  element("sidebar-projects").onclick = () => showSidebarSection(true);
+  element("sidebar-history").onclick = () => showSidebarSection(false);
+
   function setSidebar(expanded: boolean): void {
     sidebar.hidden = !expanded;
     shell.classList.toggle("sidebar-collapsed", !expanded);
@@ -51,12 +60,15 @@ export function initializeNavigation(
       ["chat", "任务空间", "回到当前任务与执行证据"],
       ["projects", "项目", "管理项目目标与边界"],
       ["memories", "长期记忆", "审阅个人偏好、约束与经验"],
-      ["skills", "Skills", "审阅、修订和复用技能"],
+      ["skills", "技能库", "Skills：审阅、修订和复用技能"],
       ["documents", "知识库", "上传与检索私有资料"],
       ["settings", "能力与设置", "查看模型接入和企业成员"],
     ].map(([view, title, description]) => ({title, description, run: () => showView(view)})),
     {title: "搜索任务", description: "按内容和状态查找历史任务", run: () => {
-      setSidebar(true); element("run-search").focus();
+      setSidebar(true); showSidebarSection(false); element("run-search").focus();
+    }},
+    {title: "项目会话", description: "展开项目树、最近会话与归档", run: () => {
+      setSidebar(true); showSidebarSection(true); element("sidebar-projects").focus();
     }},
     {title: "切换任务审查", description: "展开或折叠审批与工具证据", run: () => element("inspector-toggle").click()},
   ];

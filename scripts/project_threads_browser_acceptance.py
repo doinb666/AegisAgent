@@ -29,6 +29,8 @@ def main():
         page.locator("#register").click()
         expect(page.locator("#auth-error")).to_have_text("账号已创建，可以登录。")
         page.locator("#login").click()
+        expect(page.locator("#shell")).to_be_visible()
+        page.locator("#sidebar-projects").click()
         expect(page.locator("#project-thread-navigation")).to_be_visible()
         token = page.evaluate("sessionStorage.getItem('aegis-token')")
         headers = {"Authorization": "Bearer " + token}
@@ -62,8 +64,14 @@ def main():
         group = page.locator(".project-thread-group").filter(
             has=page.locator("summary", has_text=project["name"])
         )
+
+        def expand_project():
+            expect(page.locator("#threads-status")).to_have_text("")
+            if not group.evaluate("element => element.open"):
+                group.locator("summary").click()
+
         expect(group).to_be_visible()
-        group.locator("summary").click()
+        expand_project()
         group.get_by_role("button", name="新建项目会话").click()
         expect(page.locator("#current-project-label")).to_contain_text(project["name"])
         page.locator("#thread-rename").click()
@@ -75,8 +83,8 @@ def main():
         page.locator("#send").click()
         expect(page.locator("#run-status")).to_have_text("任务完成", timeout=20000)
         expect(page.locator("#recent-thread-list")).to_contain_text("检查参数与权限边界")
-        # 每次刷新会重绘项目树，需要按当前DOM重新展开。
-        group.locator("summary").click()
+        # 刷新保留展开状态，按当前DOM确认，避免误收起。
+        expand_project()
         group.get_by_role("button", name="新建项目会话").click()
         expect(page.locator("#current-thread-title")).to_have_text("新会话")
         page.locator("#thread-rename").click()
@@ -95,7 +103,7 @@ def main():
         expect(page.locator("#send")).to_be_disabled()
         page.locator("#thread-archive").click()
         expect(page.locator("#send")).to_be_enabled()
-        group.locator("summary").click()
+        expand_project()
         expect(group.locator(".thread-item")).to_have_count(2)
         page.screenshot(path=str(args.output / "01-项目独立会话.png"), full_page=True)
         for index in range(21):
@@ -104,7 +112,7 @@ def main():
         expect(page.locator("#recent-thread-list .thread-item")).to_have_count(20)
         page.locator("#threads-more").click()
         expect(page.locator("#recent-thread-list .thread-item")).to_have_count(23)
-        group.locator("summary").click()
+        expand_project()
         expect(group.locator(".thread-item")).to_have_count(5)
         group.get_by_role("button", name="展开更多会话").click()
         expect(group.locator(".thread-item")).to_have_count(10)
