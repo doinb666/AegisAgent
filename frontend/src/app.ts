@@ -9,6 +9,7 @@ import { initializeNotifications } from "./notifications";
 import { initializeAssetBrowser } from "./asset-browser";
 import { initializeSchedules } from "./schedules";
 import { initializeTaskInputs } from "./task-inputs";
+import { initializeModelParameters } from "./model-parameters";
 
 const $ = (id: string): any => document.getElementById(id);
 const apiRoot = "/api/v1";
@@ -31,6 +32,7 @@ const taskInputs = initializeTaskInputs({api, identity: () => state.token, messa
     $("message").value=text; $("message").focus(); notice("模板已预填，请检查目标与约束后再开始任务。");
   },
 });
+const modelParameters = initializeModelParameters(() => $("model").value);
 const projectThreads = initializeProjectThreads({
   api, identity: () => state.token, canWrite, select: selectThread, notice,
   changed: thread => {
@@ -96,6 +98,7 @@ async function guardForm(action: () => Promise<void>, button: HTMLButtonElement,
   } finally { if (token === state.token) button.disabled = false; }
 }
 function resetLogin() {
+  modelParameters.clear();
   taskInputs.clear();
   schedules.clear();
   notifications.clear();
@@ -152,6 +155,7 @@ async function enter(user) {
   schedules.show(state.view==="schedules");
   taskInputs.configure(cap);
   taskInputs.show(state.view);
+  modelParameters.configure(cap);
   $("member-form").closest("details").hidden=cap.role!=="admin";
   const bootstrap=await api("/auth/me");
   if(token!==state.token)return;
@@ -322,6 +326,7 @@ async function watch(id,generation,token) {
   }
 }
 function newTask() {
+  modelParameters.reset();
   taskInputs.resetSelection(); taskInputs.showRun(null);
   state.threadId=null;projectThreads.show(null);
   state.generation++; state.stream?.abort(); state.run=null; state.session=null; state.cursor=0;
@@ -358,7 +363,8 @@ $("composer").addEventListener("submit", event=>{
   guard(async()=>{
     const valid=contextCurrent();
     const documentIds=taskInputs.documentIds();
-    const body=JSON.stringify({message:$("message").value,session_id:state.session,mode:$("mode").value,model:$("model").value || null,collaboration_mode:canWrite()?$("collaboration-mode").value:null,project_mode:canWrite()?($("project-mode").value || null):null,...(projectThreads.enabled()?{thread_id:state.threadId || null}:{}),...(documentIds.length?{document_ids:documentIds}:{})});
+    const parameters=modelParameters.values();
+    const body=JSON.stringify({message:$("message").value,session_id:state.session,mode:$("mode").value,model:$("model").value || null,collaboration_mode:canWrite()?$("collaboration-mode").value:null,project_mode:canWrite()?($("project-mode").value || null):null,...(projectThreads.enabled()?{thread_id:state.threadId || null}:{}),...(documentIds.length?{document_ids:documentIds}:{}),...(Object.keys(parameters).length?{model_parameters:parameters}:{})});
     if(!state.pendingRequest || state.pendingRequest.body!==body) state.pendingRequest={body,key:crypto.randomUUID()};
     sessionStorage.setItem("aegis-pending-request",JSON.stringify(state.pendingRequest));
     const run=await api("/runs",{method:"POST",headers:{"Idempotency-Key":state.pendingRequest.key},body});

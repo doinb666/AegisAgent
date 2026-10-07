@@ -108,6 +108,16 @@
             <button id="send" class="primary" type="submit">开始任务 <svg class="icon" aria-hidden="true"><use href="#icon-arrow"/></svg></button></div>
           <p class="composer-hint"><svg class="icon" aria-hidden="true"><use href="#icon-shield"/></svg>写入与执行需审批<span>Ctrl Enter 发送</span></p>
           <p id="mode-hint" class="mode-hint">直接执行：边处理边调用工具，适合明确的小任务。</p>
+          <details id="model-parameters" class="task-options model-parameters" hidden>
+            <summary>模型参数 <span id="model-parameters-summary" class="muted">沿用模型配置</span></summary>
+            <div class="model-parameter-grid">
+              <div><label for="model-temperature">采样温度</label><input id="model-temperature" type="number" min="0" max="2" step="any" placeholder="沿用配置" aria-describedby="model-parameters-hint" disabled></div>
+              <div><label for="model-output-tokens">输出上限（Token）</label><input id="model-output-tokens" type="number" min="1" step="1" placeholder="沿用配置" aria-describedby="model-parameters-hint" disabled></div>
+              <div><label for="model-reasoning">推理强度</label><select id="model-reasoning" aria-describedby="model-parameters-hint" disabled><option value="">沿用模型配置</option></select></div>
+            </div>
+            <p id="model-parameters-hint" class="muted"></p><p id="model-parameters-status" class="muted" role="status"></p>
+            <button id="model-parameters-reset" type="button">恢复默认参数</button>
+          </details>
           <details class="task-options"><summary>代码工作区与协作</summary><div class="task-options-grid">
             <div><label for="collaboration-mode">协作默认方式</label><select id="collaboration-mode"><option value="team">Agent Team · 独立分析</option><option value="fork">Fork · 继承会话背景</option></select></div>
             <div><label for="project-mode">代码准备方式</label><select id="project-mode"><option value="">不准备代码目录</option><option value="fork">Fork · 仓库代码副本</option><option value="worktree">Worktree · 独立 Git 工作区</option></select></div>

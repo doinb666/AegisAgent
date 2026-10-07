@@ -39,7 +39,7 @@ const WorkspaceUI = (() => {
   function requestError(data, status) {
     if(typeof data?.detail === "string") return data.detail.slice(0,2000);
     if(Array.isArray(data?.detail)) {
-      const fields={username:"账号",password:"密码",message:"任务内容",name:"名称",content:"内容",model:"模型",mode:"执行方式",session_id:"会话",directory:"技能目录",document:"技能文件",expected_version:"版本",query:"搜索内容"};
+      const fields={username:"账号",password:"密码",message:"任务内容",name:"名称",content:"内容",model:"模型",model_parameters:"模型参数",temperature:"采样温度",max_output_tokens:"输出上限",reasoning_effort:"推理强度",mode:"执行方式",session_id:"会话",directory:"技能目录",document:"技能文件",expected_version:"版本",query:"搜索内容"};
       const messages=data.detail.filter(error=>error && typeof error==="object").slice(0,4).map(error=>{
         const location=Array.isArray(error.loc) ? error.loc.at(-1) : null;
         const field=typeof location==="string" && Object.hasOwn(fields,location) ? fields[location] : "提交字段";
@@ -117,7 +117,7 @@ const WorkspaceUI = (() => {
     finally { if (valid()) byId("files-refresh").disabled = false; }
   }
   function eventRow(id, type, data, statuses) {
-    const names = {queued: "任务已排队", running: "任务开始推进", assets_recalled: "召回本人记忆与能力", bootstrap: "加载任务上下文", model: "收到模型响应", model_request: "请求模型", model_response: "收到模型响应", tool_started: "开始工具调用", tool_call: "准备工具调用", tool_result: "收到工具结果", risk_review: "记录独立风险审查", reflection: "记录回答复核", waiting_approval: "请求审批", approval: "记录审批决定", feedback: "记录任务反馈", plan: "生成执行计划", plan_fallback: "规划失败，记录回退原因", checkpoint: "保存执行进度"};
+    const names = {queued: "任务已排队", running: "任务开始推进", assets_recalled: "召回本人记忆与能力", bootstrap: "加载任务上下文", model: "收到模型响应", model_usage: "记录模型参数与用量", model_request: "请求模型", model_response: "收到模型响应", tool_started: "开始工具调用", tool_call: "准备工具调用", tool_result: "收到工具结果", risk_review: "记录独立风险审查", reflection: "记录回答复核", waiting_approval: "请求审批", approval: "记录审批决定", feedback: "记录任务反馈", plan: "生成执行计划", plan_fallback: "规划失败，记录回退原因", checkpoint: "保存执行进度"};
     const caption = names[type] || statuses[type] || "保存任务事件";
     let description = caption;
     if (data.name) description += `：${data.name}`;

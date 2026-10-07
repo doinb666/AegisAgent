@@ -378,10 +378,17 @@ kbd { font-size: 10px; font-family: inherit; color: var(--muted); border: 1px so
 .template-replace-panel button { margin-right: 8px; }
 .task-documents { border-top: 1px solid var(--line); margin-top: 10px; padding-top: 8px; }
 .task-documents summary { padding: 8px 0; cursor: pointer; font-size: 12px; }
-.chat-view:has(.task-documents[open]) .welcome { margin: 0 auto 12px; }
-.chat-view:has(.task-documents[open]) .welcome-symbol { width: 28px; height: 28px; margin-bottom: 8px; }
-.chat-view:has(.task-documents[open]) .welcome h1 { margin: 8px 0; font-size: 24px; }
-.chat-view:has(.task-documents[open]) .suggestions { display: none; }
+.model-parameters summary span { font-size: 11px; margin-left: 8px; }
+.model-parameter-grid { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 12px; padding-top: 8px; }
+.model-parameter-grid>div { min-width: 0; }
+.model-parameter-grid input, .model-parameter-grid select { width: 100%; max-width: 100%; border: 1px solid var(--line); border-radius: 8px; background: var(--paper); }
+.model-parameter-grid label { font-size: 12px; }
+.model-parameters p { line-height: 1.7; }
+@media (max-width: 700px) { .model-parameter-grid { grid-template-columns: 1fr; } }
+.chat-view:has(.composer details[open]) .welcome { margin: 0 auto 12px; }
+.chat-view:has(.composer details[open]) .welcome-symbol { width: 28px; height: 28px; margin-bottom: 8px; }
+.chat-view:has(.composer details[open]) .welcome h1 { margin: 8px 0; font-size: 24px; }
+.chat-view:has(.composer details[open]) .suggestions { display: none; }
 .reference-toolbar, .reference-selected, .run-documents { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
 .reference-option { display: flex; gap: 10px; align-items: center; min-height: 44px; cursor: pointer; padding: 8px; border-bottom: 1px solid var(--line); }
 .reference-option input { width: 18px; height: 18px; min-height: 18px; flex-shrink: 0; accent-color: var(--action); }
