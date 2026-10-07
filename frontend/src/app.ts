@@ -13,6 +13,7 @@ import { initializeModelParameters } from "./model-parameters";
 import { initializeModelOutput } from "./model-output";
 import { initializeFileChanges } from "./file-changes";
 import { initializePlanProgress } from "./plan-progress";
+import { appendSkillRevisionReview, boundedSkillText, isAssetReference } from "./skill-revision-review";
 
 const $ = (id: string): any => document.getElementById(id);
 const apiRoot = "/api/v1";
@@ -23,6 +24,9 @@ const state: any = {token: sessionStorage.getItem("aegis-token"), user: null, ru
 const statuses = {queued:"等待执行",running:"正在推进",waiting_approval:"等待你的审批",completed:"任务完成",failed:"执行失败",cancelled:"已停止",interrupted:"需要人工核对后恢复"};
 const kinds = {profile:"偏好",preference:"偏好",constraint:"约束",memory:"记忆",episodic:"经验",skill:"Skill",procedure:"步骤",project:"项目",document:"文档"};
 const assetStates = {draft:"候选",active:"已启用",retired:"已退役"};
+let assetRenderGeneration = 0;
+let feedbackRunId: string | null = null;
+let feedbackIdentity: string | null = null;
 function notice(text) { $("notice").textContent = text; }
 const canWrite = () => state.user && state.user.role !== "viewer";
 const assetBrowser = initializeAssetBrowser(renderAssets);
@@ -80,7 +84,7 @@ async function api(path: string, options: any = {}) {
   if(requestToken!==state.token) throw new Error("账号已切换，请在当前空间重新操作。");
   if (!response.ok) {
     if (response.status === 401 && state.user) resetLogin();
-    throw new Error(WorkspaceUI.requestError(data, response.status));
+    throw Object.assign(new Error(WorkspaceUI.requestError(data, response.status)), {status: response.status});
   }
   return data;
 }
@@ -268,6 +272,7 @@ function renderRun(run) {
   $("conversation").scrollTop=$("conversation").scrollHeight;
 }
 async function openRun(id) {
+  selectFeedback(id);
   planProgress.clear();
   fileChanges.clear();
   modelOutput.clear();
@@ -372,6 +377,7 @@ async function watch(id,generation,token) {
   }
 }
 function newTask() {
+  clearFeedback();
   planProgress.clear();
   fileChanges.clear();
   modelOutput.clear();
@@ -428,8 +434,6 @@ const runActions: Array<[string, string, Record<string, boolean>]> = [
   ["approve","approval",{approved:true}],
   ["reject","approval",{approved:false}],
   ["cancel","cancel",{}],
-  ["success","feedback",{success:true}],
-  ["failure","feedback",{success:false}],
 ];
 for(const [id,path,body] of runActions) {
   $(id).onclick=()=>guard(async()=>{ const runId=state.run.id;
@@ -442,8 +446,50 @@ for(const [id,path,body] of runActions) {
     }
     await api(`/runs/${runId}/${path}`,{method:"POST",body:JSON.stringify(payload)});if(!valid())return;
     const opened=await openRun(runId);
-    if(opened)notice(path==="feedback"?"反馈已记录，经验可在 Skills 中管理。":"任务状态已更新"); },$(id));
+    if(opened)notice("任务状态已更新"); },$(id));
 }
+function clearFeedback(): void {
+  feedbackRunId=null;feedbackIdentity=null;
+  $("feedback-note").value="";
+  $("feedback-error").textContent="";
+  enableFeedback();
+}
+function enableFeedback(): void {
+  $("feedback-note").disabled=false;
+  $("success").disabled=false;$("failure").disabled=false;
+}
+function selectFeedback(runId: string): void {
+  // 同任务重读保留草稿；身份或任务改变时清空，旧代请求始终由 generation 隔离。
+  if(feedbackRunId!==runId || feedbackIdentity!==state.token)clearFeedback();
+  feedbackRunId=runId;feedbackIdentity=state.token;
+  enableFeedback();
+}
+async function submitFeedback(success: boolean): Promise<void> {
+  if(!canWrite() || !state.run || !['completed','failed'].includes(state.run.status)
+    || $("success").disabled || $("failure").disabled)return;
+  const runId=state.run.id, generation=state.generation, token=state.token;
+  const valid=()=>runCurrent(runId,generation,token);
+  const note=$("feedback-note").value;
+  $("feedback-error").textContent="";
+  if(Array.from(note).length>4000) {
+    $("feedback-error").textContent="反馈说明最多允许 4000 个字符，请缩短后重试。";
+    $("feedback-note").focus();return;
+  }
+  $("success").disabled=true;$("failure").disabled=true;$("feedback-note").disabled=true;
+  try {
+    await api(`/runs/${runId}/feedback`,{method:"POST",body:JSON.stringify({success,note})});
+    if(!valid())return;
+    clearFeedback();
+    const opened=await openRun(runId);
+    if(opened)notice("反馈已记录，未验证建议可在技能库中审阅。");
+  } catch(failure) {
+    if(valid())$("feedback-error").textContent=failure instanceof Error ? failure.message : "反馈保存失败，请重试。";
+  } finally {
+    if(valid())enableFeedback();
+  }
+}
+$("success").onclick=()=>submitFeedback(true);
+$("failure").onclick=()=>submitFeedback(false);
 async function showView(view) {
   if(view==="chat" && state.view==="chat")return;
   if(view==="chat" && state.view!=="chat" && state.run)return openRun(state.run.id);
@@ -505,7 +551,9 @@ async function loadAssets() {
   }
   if(!valid())return;
   const filter={skills:['skill','procedure'],memories:['profile','preference','constraint','memory','episodic'],projects:['project'],documents:['document']}[view];
-  state.assets=all.filter(a=>filter.includes(a.kind));
+  state.assets=all.filter(a=>filter.includes(a.kind)).map(asset=>({...asset,
+    metadata: asset.metadata && typeof asset.metadata==="object" && !Array.isArray(asset.metadata) ? asset.metadata : {},
+  }));
   if(state.view==="skills") refreshSkillDirectories();
   renderAssets();
   await refreshOverview();
@@ -524,6 +572,10 @@ function refreshSkillDirectories() {
   if(directories.includes(previous)) select.value=previous;
 }
 function renderAssets() {
+  const token=state.token, view=state.view, generation=state.assetsGeneration;
+  const renderGeneration=++assetRenderGeneration;
+  const current=()=>token===state.token && view===state.view && generation===state.assetsGeneration
+    && renderGeneration===assetRenderGeneration;
   const directory=state.view==="skills" ? $("skill-directory-filter").value : "";
   const assets=assetBrowser.select(state.assets.filter(a=>!directory || (a.metadata.directory || "未分类")===directory));
   const fragment=document.createDocumentFragment();
@@ -537,6 +589,7 @@ function renderAssets() {
   }
   for(const asset of assets) {
     const row=document.createElement("article"); row.className="asset-row";
+    row.dataset.assetId=asset.id;
     const h=document.createElement("h3");h.textContent=asset.name;
     const meta=document.createElement("div");meta.className="asset-meta";
     const badge=WorkspaceUI.node("span",assetStates[asset.status] || asset.status,"asset-state");badge.dataset.status=asset.status;
@@ -547,11 +600,11 @@ function renderAssets() {
       const details=document.createElement("details");details.className="asset-content-preview";
       const body=document.createElement("pre");
       details.append(WorkspaceUI.node("summary","查看完整正文"),body);
-      details.ontoggle=()=>{if(details.open && !body.textContent)body.textContent=asset.content;};
+      details.ontoggle=()=>{if(details.open && !body.textContent)body.textContent=boundedSkillText(asset.content,16000);};
       row.append(details);
     }
-    if(asset.kind==="skill") appendSkillControls(row,asset);
-    if(asset.metadata.source_run_id) {const source=document.createElement("button");source.textContent="查看来源任务";source.onclick=()=>guard(()=>openRun(asset.metadata.source_run_id));row.append(source);}
+    if(asset.kind==="skill") {appendSkillControls(row,asset);appendSkillRevisionReview(row,asset,api,current);}
+    if(isAssetReference(asset.metadata.source_run_id)) {const source=document.createElement("button");source.textContent="查看来源任务";source.onclick=()=>guard(()=>openRun(asset.metadata.source_run_id));row.append(source);}
     if(asset.kind==="project") {
       const use=document.createElement("button");use.textContent=projectThreads.enabled()?"新建项目会话":"在此项目开始任务";
       use.disabled=projectThreads.enabled() && (!canWrite() || asset.status!=="active");

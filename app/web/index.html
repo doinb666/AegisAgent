@@ -213,7 +213,7 @@
       </div>
       <button id="cancel" class="secondary" hidden>停止任务</button>
       <section id="collaboration-review" class="collaboration-review" aria-labelledby="collaboration-heading" hidden><div class="section-caption"><h4 id="collaboration-heading">协作与独立验收</h4></div><p class="muted">验收核对工具账本与执行契约，主控仍需审查结论。</p><ol id="collaboration-nodes" class="collaboration-nodes"></ol></section>
-      <div id="feedback" class="feedback" hidden><h4>任务是否达到目标？</h4><button id="success">已解决</button><button id="failure">仍有问题</button><p class="muted">反馈用于验证经验，候选能力可在 Skills 中管理。</p></div>
+      <div id="feedback" class="feedback" hidden><h4>任务是否达到目标？</h4><label for="feedback-note">反馈说明（可选）</label><textarea id="feedback-note" maxlength="8000" rows="3" aria-describedby="feedback-hint feedback-error"></textarea><p id="feedback-hint" class="muted">可描述遗漏、约束或验收依据，最多 4000 字符（含表情）。失败反馈可能生成未验证修订草稿，需在技能库审阅。</p><p id="feedback-error" class="error" role="alert"></p><button id="success">已解决</button><button id="failure">仍有问题</button></div>
       <div class="section-caption">执行记录</div><ol id="timeline" class="timeline"></ol>
       <section class="file-review" aria-labelledby="files-heading"><div class="section-caption"><h4 id="files-heading">任务文件</h4><button id="files-refresh" aria-label="刷新任务文件"><svg class="icon" aria-hidden="true"><use href="#icon-refresh"/></svg></button></div><p class="muted">只读预览本人任务文件，最多读取 64 KiB。</p><div id="file-list" class="file-list" aria-live="polite">打开任务后可查看文件。</div><pre id="file-preview" class="file-preview" tabindex="0" aria-label="文件内容预览" hidden></pre></section>
     </aside>

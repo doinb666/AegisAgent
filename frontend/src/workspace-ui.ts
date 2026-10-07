@@ -2,6 +2,7 @@
 
 import WorkspaceOptions from "./workspace-options";
 import { isPlanEvent, publicPlanEvent } from "./plan-progress";
+import { publicSkillRevisionEvent, skillRevisionHint } from "./skill-revision-review";
 
 // 展示层只创建安全文本节点，不解释模型或文件返回的 HTML。
 const WorkspaceUI = (() => {
@@ -40,7 +41,7 @@ const WorkspaceUI = (() => {
   function requestError(data, status) {
     if(typeof data?.detail === "string") return data.detail.slice(0,2000);
     if(Array.isArray(data?.detail)) {
-      const fields={username:"账号",password:"密码",message:"任务内容",name:"名称",content:"内容",model:"模型",model_parameters:"模型参数",temperature:"采样温度",max_output_tokens:"输出上限",reasoning_effort:"推理强度",mode:"执行方式",session_id:"会话",directory:"技能目录",document:"技能文件",expected_version:"版本",query:"搜索内容"};
+      const fields={username:"账号",password:"密码",message:"任务内容",name:"名称",content:"内容",note:"反馈说明",model:"模型",model_parameters:"模型参数",temperature:"采样温度",max_output_tokens:"输出上限",reasoning_effort:"推理强度",mode:"执行方式",session_id:"会话",directory:"技能目录",document:"技能文件",expected_version:"版本",query:"搜索内容"};
       const messages=data.detail.filter(error=>error && typeof error==="object").slice(0,4).map(error=>{
         const location=Array.isArray(error.loc) ? error.loc.at(-1) : null;
         const field=typeof location==="string" && Object.hasOwn(fields,location) ? fields[location] : "提交字段";
@@ -119,7 +120,10 @@ const WorkspaceUI = (() => {
   }
   function eventRow(id, type, data, statuses, planAccepted = false) {
     const planned = isPlanEvent(type);
-    const publicData = planned ? publicPlanEvent(type, data) : data;
+    const revisionDescription = type === "skill_revision" ? skillRevisionHint(data) : null;
+    let publicData = data;
+    if (planned) publicData = publicPlanEvent(type, data);
+    else if (type === "skill_revision") publicData = publicSkillRevisionEvent(data);
     if (planned && (!publicData || !planAccepted)) {
       const row = node("li");
       row.append(node("span", `#${id} · 计划事件未采用`),
@@ -130,9 +134,10 @@ const WorkspaceUI = (() => {
     data = publicData;
     const names = {queued: "任务已排队", running: "任务开始推进", assets_recalled: "召回本人记忆与能力", bootstrap: "加载任务上下文", model: "收到模型响应", model_usage: "记录模型参数与用量", model_request: "请求模型", model_response: "收到模型响应", tool_started: "开始工具调用", tool_call: "准备工具调用", tool_result: "收到工具结果", risk_review: "记录独立风险审查", reflection: "记录回答复核", waiting_approval: "请求审批", approval: "记录审批决定", feedback: "记录任务反馈", plan: "生成执行计划", plan_fallback: "规划失败，记录回退原因", checkpoint: "保存执行进度"};
     const outputNames = {model_output_started: "开始公开输出", model_output_retracted: "撤销临时输出", model_output_finished: "公开输出已收齐",
-      plan_replanned: "重新规划剩余步骤", node_started: "开始计划步骤", node_accepting: "核对步骤结构契约", node_accepted: "记录步骤结构验收", tool_reused: "记录历史工具来源"};
+      plan_replanned: "重新规划剩余步骤", node_started: "开始计划步骤", node_accepting: "核对步骤结构契约", node_accepted: "记录步骤结构验收", tool_reused: "记录历史工具来源", skill_revision: "记录技能修订建议"};
     const caption = outputNames[type] || names[type] || statuses[type] || "保存任务事件";
     let description = caption;
+    if (revisionDescription) description = revisionDescription;
     if (["plan", "plan_replanned"].includes(type) && Number.isSafeInteger(data.revision) && data.revision >= 0
       && data.revision <= 2147483647 && Array.isArray(data.nodes) && data.nodes.length <= 8) {
       description += `：修订 ${data.revision}，${data.nodes.length} 个顺序步骤`;

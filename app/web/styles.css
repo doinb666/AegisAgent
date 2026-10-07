@@ -220,6 +220,8 @@ kbd { font-size: 10px; font-family: inherit; color: var(--muted); border: 1px so
 .feedback { margin: 24px 0; border-top: 1px solid var(--line); padding-top: 20px; }
 .feedback button { font-size: 12px; }
 .feedback p { margin-top: 10px; }
+.feedback label { display: block; margin: 12px 0 8px; font-size: 13px; }
+.feedback textarea { font-size: 14px; }
 .inspector>.secondary { width: 100%; }
 .file-review { margin-top: 24px; border-top: 1px solid var(--line); }
 .file-review h4 { font-size: 12px; font-weight: 550; margin: 0; }
@@ -259,6 +261,16 @@ kbd { font-size: 10px; font-family: inherit; color: var(--muted); border: 1px so
 .asset-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--line); }
 .asset-content-preview summary { color: var(--accent); font-size: 12px; }
 .asset-content-preview pre { max-height: 400px; overflow: auto; padding: 16px; background: var(--rail); border-radius: 8px; }
+.revision-origin { color: var(--warning); font-size: 13px; line-height: 1.7; margin: 14px 0 4px; }
+.skill-revision-review { margin-top: 8px; padding-top: 4px; border-top: 1px solid var(--line); }
+.skill-revision-review summary { color: var(--accent); font-size: 13px; }
+.revision-status { line-height: 1.8; margin: 8px 0 14px; }
+.revision-comparison { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 16px; }
+.revision-comparison>section { min-width: 0; }
+.revision-comparison h4 { font-size: 13px; margin-bottom: 8px; }
+.revision-comparison pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 400px; overflow: auto; padding: 16px; background: var(--rail); border-radius: var(--radius); font-size: 13px; line-height: 1.8; }
+.revision-comparison>button { justify-self: start; }
+@media (max-width: 768px) { .revision-comparison { grid-template-columns: minmax(0,1fr); } }
 #assets-more { margin-top: 20px; }
 .empty { padding: 24px 10px; color: var(--muted); font-size: 12px; line-height: 1.8; }
 .settings-view>h3 { font-size: 21px; font-weight: 550; margin-bottom: 12px; }

@@ -158,6 +158,44 @@ class AcceptanceModel(ToolModel):
         validate_model_selection(
             self, kwargs.get("model_preference"), kwargs.get("model_parameters")
         )
+        # 仅本机验收模型产生确定性文本；来源、权限和召回仍由真实服务端生成。
+        system = next(
+            (item.get("content", "") for item in messages if item.get("role") == "system"),
+            "",
+        )
+        if os.getenv("AEGIS_UI_SKILL_REVISION") == "1" and "你是经验提炼器" in system:
+            trajectory = json.loads(messages[-1]["content"])
+            assets = []
+            if trajectory.get("用户原始要求", "").startswith("验收：技能修订来源"):
+                assets.append(
+                    {
+                        "kind": "skill",
+                        "name": "skill-revision-input",
+                        "content": (
+                            "输入检查：先读取输入，核对计算结果。适用于 skill-revision-input。"
+                        ),
+                    }
+                )
+            return plan_response(json.dumps({"assets": assets}, ensure_ascii=False))
+        if (
+            os.getenv("AEGIS_UI_SKILL_REVISION") == "1"
+            and '只输出 JSON 对象 {"revisions"' in system
+        ):
+            context = json.loads(messages[-1]["content"])
+            return plan_response(
+                json.dumps(
+                    {
+                        "revisions": [
+                            {
+                                "asset_id": item["asset_id"],
+                                "content": "未验证修订建议：补充空输入与异常检查，再核对结果。",
+                            }
+                            for item in context.get("skills", [])
+                        ]
+                    },
+                    ensure_ascii=False,
+                )
+            )
         fixture = await self.plan_fixture(messages, kwargs)
         if fixture is not None:
             return fixture

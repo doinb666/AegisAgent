@@ -23,6 +23,7 @@ def main():
         "scripts.layout_browser_acceptance",
         "scripts.assets_browser_acceptance",
         "scripts.skill_browser_acceptance",
+        "scripts.skill_revision_browser_acceptance",
         "scripts.schedules_browser_acceptance",
         "scripts.task_inputs_browser_acceptance",
         "scripts.model_parameters_browser_acceptance",
@@ -42,6 +43,9 @@ def main():
             "PYTHONUTF8": "1",
             "PYTHONIOENCODING": "utf-8",
             "AEGIS_UI_PLAN": "1" if "scripts.plan_browser_acceptance" in args.module else "0",
+            "AEGIS_UI_SKILL_REVISION": "1"
+            if "scripts.skill_revision_browser_acceptance" in args.module
+            else "0",
         }
         with (Path(temporary) / "server.log").open("w", encoding="utf-8") as log:
             command = [
